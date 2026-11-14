@@ -33,8 +33,10 @@ curl.exe 'http://127.0.0.1:8765/api/compare?ra=269.45&dec=4.7&fov=0.04&epoch_a=d
 curl.exe 'http://127.0.0.1:8765/api/spectrum?ra=269.45&dec=4.7&epoch=dr1-coadd'
 ```
 
-Difference is `B − A`, and stack is the two-sample mean. Arithmetic requires compatible calibration and units plus at least 10% usable common coverage. Spectral images also require matching local bandpasses. Difference returns a symmetric display range and a center-pixel measurement. The API surfaces limitations from the local PSF, WCS registration, background, and available variance. The cube provides multi-epoch pixel brightness with per-channel flags and counts. Its format supplies no channel uncertainties.
+Difference is `B − A`, and stack is the two-sample mean. Arithmetic requires compatible calibration and units plus at least 10% usable common coverage. Spectral images also require matching local bandpasses. The `alignment.registration` report gives the median sky offset and RMS scatter from at least five shared sources when enough are present. Arithmetic returns `alignment_failed` if those measurements disagree with the WCS. Sparse fields return `insufficient_matches` and retain the WCS-based result with a warning. Difference returns a symmetric display range and a center-pixel measurement. The API surfaces limitations from the local PSF, WCS registration, background, and available variance. The cube provides multi-epoch pixel brightness with per-channel flags and counts. Its format supplies no channel uncertainties.
 
 ## Tests and data
 
 Run `.\.venv\Scripts\python.exe -m pytest -q`. The real-data test runs when the FITS files are present and covers comparison, spectrum, and all six detector layers. The remaining tests use synthetic fixtures. See the [data inventory and citations](docs/DATA_SOURCES.md) and the [versioned manifest](data/manifests/spherex-dr1.json) for exact files. Switch `PLANET_X_MANIFEST` to load a new release with the same schema and supported FITS layouts, then run `planet-x-data` before restarting the API.
+
+Run `.\.venv\Scripts\python.exe -m pipeline.benchmark_barnard` to check target coverage and quality at the expected coordinates of Barnard's Star. See the [benchmark report](docs/benchmarks/BARNARDS_STAR.md) for results and full-exposure commands.

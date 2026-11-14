@@ -6,10 +6,11 @@ from pydantic import AnyHttpUrl, BaseModel, Field, FiniteFloat, model_validator
 
 
 class DataError(Exception):
-    def __init__(self, code: str, message: str, status: int = 422):
+    def __init__(self, code: str, message: str, status: int = 422, *, details: dict | None = None):
         super().__init__(message)
         self.code = code
         self.status = status
+        self.details = details
 
 
 class Position(BaseModel):

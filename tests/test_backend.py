@@ -11,6 +11,7 @@ from astropy.io import fits
 from fastapi.testclient import TestClient
 
 from apps.api.main import create_app
+from pipeline.benchmark_barnard import benchmark
 from pipeline.catalog import ArchiveFile, Position, load_manifest
 from pipeline.compare import output_grid
 from pipeline.images import read_image
@@ -121,6 +122,32 @@ def test_wcs_registration_aligns_a_stationary_source(test_data):
     assert payload['images']['result'][12][11] == 0
 
 
+@pytest.mark.parametrize('shift_pixels', [0, 1.25])
+def test_registration_checks_shared_peaks(test_data, shift_pixels):
+    manifest_path, root = test_data
+    a, b = load_manifest(manifest_path).observations[:2]
+    peaks = [(4, 5), (7, 18), (12, 12), (16, 4), (19, 18)]
+    for observation, shift in ((a, 0), (b, shift_pixels)):
+        with fits.open(root / observation.filename, mode='update') as hdus:
+            hdus[0].data[:] = 0
+            for y, x in peaks:
+                hdus[0].data[y, x] = 25
+            hdus['FLAGS'].data[:] = 0
+            hdus['MASK'].data[:] = 0
+            hdus[0].header['CRPIX1'] += shift
+    with TestClient(create_app(manifest_path, root)) as client:
+        difference = compare(client)
+        side_by_side = compare(client, mode='side_by_side')
+    report = side_by_side.json()['alignment']['registration']
+    assert report['used_sources'] == len(peaks)
+    assert report['median_offset_arcsec']['magnitude'] == pytest.approx(shift_pixels * 3.6, abs=0.02)
+    if shift_pixels:
+        assert difference.status_code == 422
+        assert difference.json()['error']['details']['status'] == 'failed'
+    else:
+        assert difference.json()['alignment']['astrometric_offset_verified'] is True
+
+
 @pytest.mark.parametrize(('mode', 'value', 'uncertainty'), [('sum', 10, np.sqrt(8)), ('stack', 5, np.sqrt(2))])
 def test_arithmetic_and_unit_conversion(client, mode, value, uncertainty):
     payload = compare(client, epoch_b='different-unit', mode=mode).json()
@@ -180,6 +207,8 @@ def test_real_dr1_when_downloaded():
         result = compare(client, a.epoch, b.epoch, fov=0.04)
         assert result.status_code == 200
         assert result.json()['alignment']['arithmetic_valid_fraction'] > 0.8
+        assert result.json()['alignment']['registration']['used_sources'] >= 5
+        assert result.json()['alignment']['astrometric_offset_verified'] is True
         assert result.json()['measurement']['uncertainty'] > 0
         target = {'ra': POSITION['ra'], 'dec': POSITION['dec'], 'epoch': manifest.cubes[0].epoch}
         response = client.get('/api/spectrum', params=target)
@@ -195,3 +224,15 @@ def test_real_dr1_when_downloaded():
             layer = client.get(f'/api/layers/{detector}', params={**target, 'fov': 0.025})
             assert layer.status_code == 200
             assert layer.json()['channel'] == 9
+
+
+def test_barnard_quality_when_downloaded():
+    manifest = load_manifest(MANIFEST)
+    root = MANIFEST.parent.parent / 'samples'
+    if not all((root / observation.filename).is_file() for observation in manifest.observations):
+        pytest.skip('Run planet-x-data to exercise public FITS observations')
+    report = benchmark(root, manifest.observations)
+    assert report['status'] == 'not_testable'
+    assert report['measured_offset_arcsec'] is None
+    assert report['predicted_apparent_offset_arcsec']['north'] == pytest.approx(4.59, abs=0.02)
+    assert {epoch['status'] for epoch in report['epochs']} <= {'outside_image', 'core_masked'}

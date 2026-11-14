@@ -42,7 +42,10 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None) 
 
     @api.exception_handler(DataError)
     async def data_error(_: Request, error: DataError):
-        return JSONResponse(status_code=error.status, content={'error': {'code': error.code, 'message': str(error)}})
+        payload = {'code': error.code, 'message': str(error)}
+        if error.details is not None:
+            payload['details'] = error.details
+        return JSONResponse(status_code=error.status, content={'error': payload})
 
     @api.exception_handler(RequestValidationError)
     async def validation_error(_: Request, error: RequestValidationError):

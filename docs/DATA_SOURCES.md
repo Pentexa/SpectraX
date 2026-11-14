@@ -12,7 +12,7 @@ IRSA SIA2 `COLLECTION=spherex_dr1`, `POS=circle 269.45 4.7 0.002` sorgusu 240 g�
 
 ### Doğrulanan senaryo
 
-0.04° alanda iki görüntünün geometrik hizalama ve kalite maskesi sonrası ortak piksel oranı %94.0. Dalga boyu uyumluluğu da dahil edildiğinde %90.4. Merkez piksel parlaklık farkı `+0.0249 ± 0.0320 MJy/sr`. Belirsizlik FITS varyansından gelir. Astrometrik ofset, kaynak fotometrisi ve PSF eşlemesi için bu ölçüm doğrulama sağlamaz. Altı dedektörün birleşik küpünde aynı koordinatta 100 geçerli kanal var. İki kanalda `NHITS=0` olduğu için değerleri `null`.
+0.04° alanda iki görüntünün geometrik hizalama ve kalite maskesi sonrası ortak piksel oranı %94.0. Dalga boyu uyumluluğu da dahil edildiğinde %90.4. Beş ortak kaynağın medyan göreli konum farkı 0,17 yay saniyesi ve RMS saçılımı 1,27 yay saniyesi. Merkez piksel parlaklık farkı `+0.0249 ± 0.0320 MJy/sr`. Belirsizlik FITS varyansından gelir. Bu değer merkez pikseli temsil eder. Altı dedektörün birleşik küpünde aynı koordinatta 100 geçerli kanal var. İki kanalda `NHITS=0` olduğu için değerleri `null`. [Barnard Yıldızı hedef kontrolü](benchmarks/BARNARDS_STAR.md)
 
 ### Atıf ve kullanım
 

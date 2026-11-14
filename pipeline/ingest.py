@@ -38,11 +38,11 @@ def _download(source: ArchiveFile, target: Path):
             temporary.unlink(missing_ok=True)
 
 
-def fetch(product: Product, data_dir: Path) -> Path:
+def fetch(product: Product, data_dir: Path, *, full_image: bool = False) -> Path:
     target = data_dir / product.filename
     sources = [product]
     if isinstance(product, Observation) and product.full_image is not None:
-        sources.append(product.full_image)
+        sources = [product.full_image] if full_image else [product, product.full_image]
     if target.is_file() and target.stat().st_size in {source.size_bytes for source in sources}:
         with target.open("rb") as file:
             digest = hashlib.file_digest(file, "sha256").hexdigest()
@@ -66,12 +66,13 @@ def main():
     parser.add_argument("--manifest", type=Path, default=configured_path("PLANET_X_MANIFEST", "data/manifests/spherex-dr1.json"))
     parser.add_argument("--data-dir", type=Path, default=configured_path("PLANET_X_DATA_DIR", "data/samples"))
     parser.add_argument("--include-cubes", action="store_true", help="Also fetch the optional spectral cube(s)")
+    parser.add_argument("--full-images", action="store_true", help="Prefer full exposures over cutouts when available")
     args = parser.parse_args()
     manifest = load_manifest(args.manifest)
     products = [*manifest.observations, *(manifest.cubes if args.include_cubes else [])]
     for product in products:
         try:
-            print(f"{product.epoch}: {fetch(product, args.data_dir)}")
+            print(f"{product.epoch}: {fetch(product, args.data_dir, full_image=args.full_images)}")
         except (OSError, ValueError) as exc:
             parser.exit(1, f"Could not download {product.epoch}: {exc}\n")
 

@@ -8,6 +8,7 @@ from reproject import reproject_interp
 
 from pipeline.catalog import DataError, Observation, Position
 from pipeline.images import Image
+from pipeline.registration import assess_registration
 
 Mode = Literal["side_by_side", "difference", "sum", "stack"]
 MAX_PIXELS = 256
@@ -89,8 +90,21 @@ def compare(position: Position, mode: Mode, epoch_a: Observation, epoch_b: Obser
     if not (np.isfinite(aligned_a).any() or np.isfinite(aligned_b).any()):
         raise DataError("outside_coverage", "The requested region has no unmasked pixels", 404)
 
-    warnings = ["WCS-only registration. Residual astrometry and local PSF differences have not been calibrated.",
+    warnings = ["WCS-only registration. Local PSFs have not been matched.",
                 "Nearest-neighbor resampling. Adjacent residual pixels can reuse an input pixel."]
+    same_observation = (epoch_a.source, epoch_a.observation_id) == (epoch_b.source, epoch_b.observation_id)
+    registration = {"status": "same_observation" if same_observation else "no_common_coverage"}
+    if not same_observation and overlap.any():
+        try:
+            registration = assess_registration(a, b, wcs, shape)
+        except (ValueError, RuntimeError, NoConvergence) as exc:
+            raise DataError("alignment_failed", f"Astrometric check failed: {exc}") from exc
+    if registration["status"] in ("failed", "inconsistent_matches"):
+        if arithmetic:
+            raise DataError("alignment_failed", "Common sources disagree with the WCS registration", details=registration)
+        warnings.append("Common sources disagree with the WCS registration.")
+    if registration["status"] == "insufficient_matches":
+        warnings.append("Too few common reference sources to verify relative astrometry independently of the FITS WCS.")
     if a.metadata['psf_fwhm_arcsec'] != b.metadata['psf_fwhm_arcsec']:
         warnings.append("Input PSF FWHM metadata differ. PSFs were not matched.")
 
@@ -121,7 +135,6 @@ def compare(position: Position, mode: Mode, epoch_a: Observation, epoch_b: Obser
         conversion = b.unit.to(a.unit)
         aligned_b *= conversion
         var_b *= conversion**2
-        same_observation = (epoch_a.source, epoch_a.observation_id) == (epoch_b.source, epoch_b.observation_id)
         if same_observation and epoch_a.epoch != epoch_b.epoch:
             raise DataError("incompatible_epochs", "Both entries refer to the same observation; use a single epoch ID")
         variance = var_a + var_b
@@ -156,7 +169,7 @@ def compare(position: Position, mode: Mode, epoch_a: Observation, epoch_b: Obser
                  "pixel_order": "rows increasing FITS Y, columns increasing FITS X; array index starts at zero"},
         "alignment": {"method": "WCS / reproject_interp, nearest-neighbor", "overlap_fraction": float(overlap.mean()),
                       "arithmetic_valid_fraction": float(compatible.mean()) if arithmetic else None,
-                      "astrometric_offset_verified": False},
+                      "astrometric_offset_verified": registration["status"] == "passed", "registration": registration},
         "images": {"a": nullable_pixels(aligned_a), "b": nullable_pixels(aligned_b),
                    "result": nullable_pixels(result) if result is not None else None,
                    "uncertainty": nullable_pixels(uncertainty) if uncertainty is not None and np.isfinite(uncertainty).any() else None,
