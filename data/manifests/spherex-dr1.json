@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "observations": [
+    {
+      "epoch": "dr1-2025-10-01-d1",
+      "source": "NASA/IPAC IRSA SPHEREx",
+      "release": "DR1",
+      "observation_id": "2025W40_1A_0471_1",
+      "observation_start_mjd": 60949.130278993,
+      "observation_end_mjd": 60949.131611372,
+      "access": "https://irsa.ipac.caltech.edu/ibe/data/spherex/dr1/level2/2025W40_1A/l2b-v27-2026-239/1/level2_2025W40_1A_0471_1D1_spx_l2b-v27-2026-239.fits?center=269.45,4.7&size=0.05",
+      "size_bytes": 3965760,
+      "sha256": "1cdf797c58829a99bf99d9e807a2d6781e3461432d39fdfc6185573b8f248825",
+      "filename": "dr1-2025-10-01-d1.fits",
+      "calibration": "SPHEREx DR1 Level 2B v27",
+      "processing_history": ["SPHEREx Level 2B calibration", "IRSA cutout at ICRS (269.45, 4.7), size 0.05 deg"],
+      "coverage": {"ra": 269.45, "dec": 4.7, "fov": 0.05},
+      "flags": "FLAGS extension. SOURCE (bit 21) is allowed. All other set bits are masked.",
+      "band": "SPHEREx-D1",
+      "detector": 1,
+      "spectral_wcs": "spherex-lvf",
+      "reject_flag_bits": 4292870143,
+      "full_image": {
+        "access": "https://nasa-irsa-spherex.s3.us-east-1.amazonaws.com/dr1/level2/2025W40_1A/l2b-v27-2026-239/1/level2_2025W40_1A_0471_1D1_spx_l2b-v27-2026-239.fits",
+        "size_bytes": 62124480,
+        "sha256": "0872e1938423150b9169be400bcf57fe86a73f268ed44f6444b3d14759865909"
+      }
+    },
+    {
+      "epoch": "dr1-2026-03-11-d1",
+      "source": "NASA/IPAC IRSA SPHEREx",
+      "release": "DR1",
+      "observation_id": "2026W11_1A_0556_2",
+      "observation_start_mjd": 61110.635773924,
+      "observation_end_mjd": 61110.637106302,
+      "access": "https://irsa.ipac.caltech.edu/ibe/data/spherex/dr1/level2/2026W11_1A/l2b-v27-2026-232/1/level2_2026W11_1A_0556_2D1_spx_l2b-v27-2026-232.fits?center=269.45,4.7&size=0.05",
+      "size_bytes": 3965760,
+      "sha256": "da8a776b59d1034fa81baea17af3da66493e725de3de1716abf3db8118a14052",
+      "filename": "dr1-2026-03-11-d1.fits",
+      "calibration": "SPHEREx DR1 Level 2B v27",
+      "processing_history": ["SPHEREx Level 2B calibration", "IRSA cutout at ICRS (269.45, 4.7), size 0.05 deg"],
+      "coverage": {"ra": 269.45, "dec": 4.7, "fov": 0.05},
+      "flags": "FLAGS extension. SOURCE (bit 21) is allowed. All other set bits are masked.",
+      "band": "SPHEREx-D1",
+      "detector": 1,
+      "spectral_wcs": "spherex-lvf",
+      "reject_flag_bits": 4292870143,
+      "full_image": {
+        "access": "https://nasa-irsa-spherex.s3.us-east-1.amazonaws.com/dr1/level2/2026W11_1A/l2b-v27-2026-232/1/level2_2026W11_1A_0556_2D1_spx_l2b-v27-2026-232.fits",
+        "size_bytes": 63092160,
+        "sha256": "aba9a6b56e15561920401e218c4421b3adbdc26dc1e4674a61cb1e19674780fb"
+      }
+    }
+  ],
+  "cubes": [
+    {
+      "epoch": "dr1-coadd",
+      "source": "NASA/IPAC IRSA SPHEREx",
+      "release": "DR1",
+      "observation_id": "Npix7945_cube",
+      "observation_start_mjd": 60899.535352025,
+      "observation_end_mjd": 61168.614019624,
+      "access": "https://nasa-irsa-spherex.s3.us-east-1.amazonaws.com/dr1/hips5_cube/hips_20261026/Norder5/Dir0/Npix7945_cube.fits",
+      "size_bytes": 320909760,
+      "sha256": "00e6e83df65d7e85eabb7029fc99d924e9e8c631037572bc2e7453935f9cc5b7",
+      "filename": "dr1-npix7945-cube.fits",
+      "calibration": "SPHEREx DR1 All-Sky Cube, nominal channels from the FITS SPECTRAL_CHANNELS table",
+      "processing_history": ["SPHEREx DR1 cross-epoch mosaic", "Order 5 HEALPix tile 7945"],
+      "coverage": {"ra": 268.59375, "dec": 4.78019185, "fov": 1.85},
+      "flags": "NHITS and FLAGS extensions. Zero hits or non-finite brightness masks a channel. Other flags are reported.",
+      "bands": 102
+    }
+  ]
+}
