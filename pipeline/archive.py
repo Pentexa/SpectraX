@@ -44,8 +44,9 @@ def _number(value, scale: float = 1.0) -> float | None:
     return number if isfinite(number) else None
 
 
-def _query_sia(collection: str, position: tuple[float, float, float], limit: int,
-               wavelength_um: float | None, time_range: str | None):
+def _query_sia(collection: str, *, maxrec: int, position: tuple[float, float, float] | None = None,
+               wavelength_um: float | None = None, time_range: str | None = None,
+               archive_id: str | None = None):
     archive = IrsaClass()
     with archive._session as session:
         # PyVO submits its own requests. Apply a per-client timeout and use
@@ -54,12 +55,31 @@ def _query_sia(collection: str, position: tuple[float, float, float], limit: int
         archive._sia = SIA2Service(archive.sia_url, session=session, check_baseurl=False)
         constraints = {"TIME": time_range} if time_range is not None else {}
         band = wavelength_um * 1e-6 if wavelength_um is not None else None
-        return archive.query_sia(pos=position, collection=collection, maxrec=limit + 1, band=band, **constraints)
+        try:
+            table = archive.query_sia(pos=position, collection=collection, maxrec=maxrec, band=band,
+                                      publisher_did=archive_id, **constraints)
+        except (DALAccessError, RequestException) as exc:
+            if isinstance(exc, Timeout) or isinstance(getattr(exc, "cause", None), Timeout):
+                raise DataError("archive_timeout", "The IRSA archive took too long to respond", 504) from exc
+            raise DataError("archive_unavailable", "The IRSA archive could not complete the query", 502) from exc
+    if not REQUIRED_COLUMNS.issubset(table.colnames):
+        raise DataError("invalid_archive_response", "IRSA returned an unexpected image catalog", 502)
+    return table
+
+
+def find_image(release: ArchiveRelease, archive_id: str):
+    collection = f"spherex_{release.lower()}"
+    table = _query_sia(collection, maxrec=2, archive_id=archive_id)
+    if len(table) == 0:
+        raise DataError("unknown_archive_image", "IRSA has no image with that archive ID", 404)
+    if len(table) != 1 or table[0]["obs_publisher_did"] != archive_id or table[0]["obs_collection"] != collection:
+        raise DataError("invalid_archive_response", "IRSA did not return a unique matching image", 502)
+    return table[0]
 
 
 def search_images(*, release: ArchiveRelease, ra: float, dec: float, radius_deg: float, limit: int,
                   wavelength_um: float | None, start_mjd: float | None, end_mjd: float | None,
-                  local_observations: list[Observation], data_dir: Path) -> ArchiveSearch:
+                  local_observations: list[tuple[Observation, Path]]) -> ArchiveSearch:
     if start_mjd is not None and end_mjd is not None and start_mjd > end_mjd:
         raise DataError("invalid_time_range", "start_mjd must be less than or equal to end_mjd")
     time_range = None
@@ -68,17 +88,15 @@ def search_images(*, release: ArchiveRelease, ra: float, dec: float, radius_deg:
         upper = end_mjd if end_mjd is not None else "+Inf"
         time_range = f"{lower} {upper}"
     collection = f"spherex_{release.lower()}"
-    try:
-        table = _query_sia(collection, (ra, dec, radius_deg), limit, wavelength_um, time_range)
-    except (DALAccessError, RequestException) as exc:
-        cause = getattr(exc, "cause", None)
-        if isinstance(exc, Timeout) or isinstance(cause, Timeout):
-            raise DataError("archive_timeout", "The IRSA archive took too long to respond", 504) from exc
-        raise DataError("archive_unavailable", "The IRSA archive could not complete the search", 502) from exc
-
-    if not REQUIRED_COLUMNS.issubset(table.colnames):
-        raise DataError("invalid_archive_response", "IRSA returned an unexpected image catalog", 502)
-    local = {(item.observation_id, item.band): item for item in local_observations if item.release == release}
+    table = _query_sia(collection, maxrec=limit + 1, position=(ra, dec, radius_deg),
+                       wavelength_um=wavelength_um, time_range=time_range)
+    local = {}
+    for item, directory in local_observations:
+        if item.release == release:
+            key = (item.observation_id, item.band)
+            available = (directory / item.filename).is_file()
+            if key not in local or (available and not local[key][1]):
+                local[key] = (item.epoch, available)
     observations = []
     for row in table[:limit]:
         try:
@@ -88,13 +106,12 @@ def search_images(*, release: ArchiveRelease, ra: float, dec: float, radius_deg:
             if any(is_masked(value) or not str(value).strip() for value in names):
                 raise ValueError("Missing observation metadata")
             archive_id, observation_id, band = map(str, names)
-            product = local.get((observation_id, band))
+            epoch, available = local.get((observation_id, band), (None, False))
             observations.append(ArchiveObservation(
                 archive_id=archive_id, observation_id=observation_id, band=band, fits_url=row["access_url"],
                 observation_start_mjd=_number(row["t_min"]), observation_end_mjd=_number(row["t_max"]),
                 wavelength_min_um=_number(row["em_min"], 1e6), wavelength_max_um=_number(row["em_max"], 1e6),
-                epoch=product.epoch if product else None,
-                available_locally=product is not None and (data_dir / product.filename).is_file(),
+                epoch=epoch, available_locally=available,
             ))
         except (TypeError, ValueError) as exc:
             raise DataError("invalid_archive_response", "IRSA returned invalid observation metadata", 502) from exc

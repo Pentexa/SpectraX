@@ -126,15 +126,20 @@ def _read_image(path: Path, modified_ns: int, size: int, spectral_wcs: str, reje
     return Image(signal, variance, valid, flags, wcs, spectral, unit, float(np.max(scales)), metadata)
 
 
+def read_fits_image(path: Path, spectral_wcs: str, reject_flag_bits: int,
+                    expected_sizes: set[int] | None = None) -> Image:
+    stat = path.stat()
+    if expected_sizes is not None and stat.st_size not in expected_sizes:
+        raise DataError("invalid_fits", f"{path.name}: size differs from the manifest")
+    return _read_image(path, stat.st_mtime_ns, stat.st_size, spectral_wcs, reject_flag_bits)
+
+
 def read_image(data_dir: Path, observation: Observation) -> Image:
     path = data_path(data_dir, observation)
-    stat = path.stat()
     sizes = {observation.size_bytes}
     if observation.full_image is not None:
         sizes.add(observation.full_image.size_bytes)
-    if stat.st_size not in sizes:
-        raise DataError("invalid_fits", f"{path.name}: size differs from the manifest")
-    image = _read_image(path, stat.st_mtime_ns, stat.st_size, observation.spectral_wcs, observation.reject_flag_bits)
+    image = read_fits_image(path, observation.spectral_wcs, observation.reject_flag_bits, sizes)
     start = image.metadata["start_mjd"]
     end = image.metadata["end_mjd"]
     if abs(start - observation.observation_start_mjd) > 1 / 86400:

@@ -73,6 +73,14 @@ jobs:
             if [[ "$attempt" -lt 3 ]]; then sleep 5; fi
           done
           exit 1
+      - name: Test archive import with verified SPHEREx FITS
+        run: |
+          docker build --target test --tag backend-test .
+          docker run --rm --network none \
+            --mount "type=bind,src=$PWD/tests,dst=/app/tests,readonly" \
+            --mount "type=bind,src=$PWD/data/samples,dst=/data,readonly" \
+            -e PLANET_X_E2E_SAMPLES=/data \
+            backend-test python -m pytest -q -p no:cacheprovider tests/test_archive_e2e.py
       - name: Verify container API
         shell: bash
         run: |
@@ -83,7 +91,7 @@ jobs:
             --output "$RUNNER_TEMP/backend-health.json" http://127.0.0.1:8765/api/health
           jq -e '.status == "ok"' "$RUNNER_TEMP/backend-health.json"
           curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8765/openapi.json \
-            | jq -e '.paths | has("/api/compare") and has("/api/spectrum") and has("/api/releases")'
+            | jq -e '.paths | has("/api/compare") and has("/api/spectrum") and has("/api/releases") and has("/api/archive/import")'
           python3 scripts/smoke_backend.py
       - name: Push image to GitHub Container Registry
         env:
