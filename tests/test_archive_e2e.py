@@ -10,7 +10,7 @@ from hashlib import sha256
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
 from pathlib import Path
-from threading import Barrier, Thread
+from threading import Barrier, Event, Thread
 from time import monotonic, sleep
 from urllib.parse import parse_qs, urlsplit
 
@@ -141,6 +141,15 @@ def irsa(tmp_path):
                     return
                 if self.server.cutout_barrier is not None:
                     self.server.cutout_barrier.wait(timeout=10)
+                stalled = self.server.stalled_cutout
+                if stalled is not None and url.path == stalled[0]:
+                    _, length, release = stalled
+                    self.send_response(200)
+                    self.send_header("Content-Length", str(length))
+                    self.end_headers()
+                    self.wfile.write(payload[:65536].ljust(65536, b"\0"))
+                    release.wait(timeout=20)
+                    return
                 self.send_payload(payload, "application/fits")
             else:
                 self.send_error(404)
@@ -166,6 +175,7 @@ def irsa(tmp_path):
         server.catalog_failures = deque()
         server.cutout_failures = deque()
         server.cutout_barrier = None
+        server.stalled_cutout = None
         server.omit_fits_length = False
         server.wrong_fits = False
         server.untrusted_url = False
@@ -179,7 +189,7 @@ def irsa(tmp_path):
 
 
 @contextmanager
-def running_api(irsa, tmp_path, *, quota_bytes=1024**3):
+def running_api(irsa, tmp_path, *, quota_bytes=1024**3, with_process=False):
     archive, manifest_path, _ = irsa
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -203,7 +213,7 @@ def running_api(irsa, tmp_path, *, quota_bytes=1024**3):
                     else:
                         log.seek(0)
                         pytest.fail(log.read().decode(errors="replace") or "Uvicorn did not start")
-                    yield client
+                    yield (client, process) if with_process else client
             finally:
                 if process.poll() is None:
                     process.terminate()
@@ -387,6 +397,50 @@ def test_import_quota_across_processes_and_restart(irsa, tmp_path):
         flux = client.get("/api/photometry", params={**coords, "epoch": epoch})
         assert flux.status_code == 200, flux.text
         assert [entry.name for entry in directory.iterdir() if entry.is_dir()] == [epoch]
+
+
+def test_import_recovers_quota_when_a_worker_is_killed(irsa, tmp_path):
+    server, _, _ = irsa
+    storage = tmp_path / "imports"
+    reserved = max(131072, max(map(len, server.payloads.values())))
+    quota = reserved + 2048
+    with (
+        running_api(irsa, tmp_path, quota_bytes=quota, with_process=True) as (interrupted, process),
+        running_api(irsa, tmp_path, quota_bytes=quota) as surviving,
+        ThreadPoolExecutor(1) as pool,
+    ):
+        records = surviving.get("/api/archive/search", params=CENTER).json()["observations"]
+        first, second = [{**CUTOUT, "archive_id": record["archive_id"]} for record in records]
+        release = Event()
+        server.stalled_cutout = (urlsplit(records[0]["fits_url"]).path, reserved, release)
+        try:
+            request = pool.submit(interrupted.post, "/api/archive/import", json=first)
+            deadline = monotonic() + 10
+            while monotonic() < deadline:
+                partial = next(storage.glob(".download-*/*/cutout.fits"), None)
+                if partial is not None and partial.stat().st_size == reserved:
+                    break
+                sleep(0.025)
+            else:
+                pytest.fail("The interrupted worker did not reserve space")
+
+            rejected = surviving.post("/api/archive/import", json=second)
+            assert rejected.status_code == 507, rejected.text
+            assert rejected.json()["error"]["details"]["used_bytes"] == reserved
+            assert partial.stat().st_size == reserved
+
+            process.kill()
+            process.wait(timeout=10)
+            with pytest.raises(httpx.TransportError):
+                request.result(timeout=10)
+            assert partial.is_file()
+
+            accepted = surviving.post("/api/archive/import", json=second)
+            assert accepted.status_code == 201, accepted.text
+            assert not list(storage.glob(".download-*"))
+            assert surviving.get("/api/datasets").json()["observations"] == [accepted.json()]
+        finally:
+            release.set()
 
 
 if __name__ == "__main__":

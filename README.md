@@ -50,7 +50,9 @@ Send the `archive_id` from search together with a cutout center and width betwee
 
 Archive queries and downloads retry temporary IRSA errors and interrupted transfers up to twice. The API honors `Retry-After` delays up to five seconds and returns the upstream failure for longer delays. A download retry starts from byte zero. The API publishes the FITS and its metadata together after validation.
 
-`PLANET_X_IMPORT_QUOTA_BYTES` defaults to 1 GiB (1073741824 bytes) per import directory. It covers imported FITS, their metadata, and staging reservations. Use the same limit for workers sharing a local volume. A new cutout that would exceed it returns HTTP 507 with `import_quota_exceeded` and byte counts. Cached imports and processing stay available at capacity. To reclaim space, stop workers using the volume and remove unwanted imported epoch directories or abandoned `.download-*` directories.
+`PLANET_X_IMPORT_QUOTA_BYTES` defaults to 1 GiB (1073741824 bytes) per import directory. It covers imported FITS, their metadata, and staging reservations. Use the same limit for workers sharing a local volume. A new cutout that would exceed it returns HTTP 507 with `import_quota_exceeded` and byte counts. Cached imports and processing stay available at capacity.
+
+After a worker exits unexpectedly, the next new import reclaims abandoned staging reservations before checking the quota. Active downloads keep their reservations and published observations stay available. For older abandoned staging directories without an ownership lock, or to remove unwanted published observations, stop the workers using the volume and remove the corresponding directories manually.
 
 ```powershell
 $Cutout = @{ archive_id = 'ivo://irsa.ipac/spherex_dr1?2025W40_1A_0471_1/D1'; ra = 269.45; dec = 4.7; fov = 0.05 }

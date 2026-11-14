@@ -1,7 +1,6 @@
 import hashlib
 import re
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from time import monotonic
 from urllib.parse import urlsplit
 
@@ -15,7 +14,7 @@ from pipeline.archive import find_image, irsa_timeouts, retry_irsa
 from pipeline.catalog import DataError, Observation, Position
 from pipeline.images import read_fits_image
 from pipeline.import_storage import (
-    FILENAME, IMPORTED_EPOCH, METADATA, QUOTA_ERROR, STAGING_PREFIX, ImportQuota,
+    FILENAME, IMPORTED_EPOCH, METADATA, QUOTA_ERROR, ImportQuota,
 )
 
 ARCHIVE_ID = re.compile(r"^ivo://irsa\.ipac/spherex_(dr1|qr3)\?([A-Za-z0-9_]{1,50})/D([1-6])$")
@@ -160,13 +159,10 @@ def import_exposure(quota: ImportQuota, request: ImportRequest) -> tuple[Observa
         return existing[0], existing[1], False
     target = directory / epoch
     try:
-        directory.mkdir(parents=True, exist_ok=True)
-        with quota.write_lock():
-            quota.check_space(1)
-        with TemporaryDirectory(prefix=STAGING_PREFIX, dir=directory) as staging:
+        with quota.staging() as staging:
             # The sibling rename publishes metadata and FITS together, also
             # when two ASGI workers request the same cutout concurrently.
-            pending = Path(staging) / epoch
+            pending = staging / epoch
             pending.mkdir()
             observation = _observation(request, epoch, pending / FILENAME, quota)
             metadata = observation.model_dump_json().encode("utf-8")
