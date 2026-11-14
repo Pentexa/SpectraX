@@ -48,7 +48,7 @@ Archive search uses Astroquery with IRSA SIA2. The radius defaults to 0.01° and
 
 Send the `archive_id` from search together with a cutout center and width between 0.02° and 0.2°. The API resolves the ID at IRSA, downloads a cutout up to 32 MiB, validates the FITS, and returns the observation metadata and an `epoch` for `/api/compare` and `/api/photometry`. A new cutout returns HTTP 201. The same ID, center, and width return HTTP 200 with the stored epoch. Imports appear in `/api/datasets` and survive restarts in `PLANET_X_IMPORT_DIR`, which defaults to `imports` under the local data directory and to `/imports` in the container. Remote failures return `archive_unavailable` (502) or `archive_timeout` (504).
 
-Archive queries and downloads retry temporary IRSA errors and interrupted transfers up to twice. If IRSA asks for a delay of more than two seconds in `Retry-After`, the API returns the upstream failure after that attempt. A download retry starts from byte zero. The API publishes the FITS and its metadata together after validation.
+Archive queries and downloads retry temporary IRSA errors and interrupted transfers up to twice. The API honors `Retry-After` delays up to five seconds and returns the upstream failure for longer delays. A download retry starts from byte zero. The API publishes the FITS and its metadata together after validation.
 
 ```powershell
 $Cutout = @{ archive_id = 'ivo://irsa.ipac/spherex_dr1?2025W40_1A_0471_1/D1'; ra = 269.45; dec = 4.7; fov = 0.05 }

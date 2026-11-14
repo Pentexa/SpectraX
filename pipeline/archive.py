@@ -21,7 +21,7 @@ REQUIRED_COLUMNS = {"obs_id", "obs_publisher_did", "obs_collection", "access_url
                     "t_min", "t_max", "em_min", "em_max"}
 RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
 RETRY_DELAYS = (0.25, 0.5)
-MAX_RETRY_AFTER = 2.0
+MAX_RETRY_AFTER = 5.0
 Result = TypeVar("Result")
 
 

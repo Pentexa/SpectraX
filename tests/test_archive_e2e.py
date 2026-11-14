@@ -304,9 +304,11 @@ def test_archive_retries_transient_errors_and_cleans_up_after_exhaustion(irsa, t
         assert limited.json()["error"]["code"] == "archive_unavailable"
         assert len(server.calls) == 1
 
-        server.catalog_failures.append((503, "0"))
+        server.catalog_failures.append((503, "5"))
+        started = monotonic()
         search = client.get("/api/archive/search", params=CENTER)
         assert search.status_code == 200, search.text
+        assert monotonic() - started >= 5
         assert len(server.calls) == 3
         first, second = search.json()["observations"]
         payload = {**CUTOUT, "archive_id": first["archive_id"]}
