@@ -4,7 +4,7 @@ from pathlib import Path
 from astropy.table import MaskedColumn, Table
 from fastapi.testclient import TestClient
 from requests import Response, Session
-from requests.exceptions import ConnectionError, ReadTimeout
+from requests.exceptions import ConnectionError, ReadTimeout, SSLError
 from urllib3.response import HTTPResponse
 
 from apps.api.main import create_app
@@ -61,15 +61,22 @@ def test_sia_search_filters_and_matches_local_exposure(monkeypatch, tmp_path):
 
 def test_sia_search_reports_network_failures(monkeypatch, tmp_path):
     def fail(*args, **kwargs):
+        attempts.append(1)
         raise failure
 
     monkeypatch.setattr(Session, "request", fail)
+    monkeypatch.setattr("pipeline.archive.sleep", lambda _: None)
     with TestClient(create_app(MANIFEST, tmp_path)) as client:
-        for failure, status, code in ((ReadTimeout(), 504, "archive_timeout"),
-                                      (ConnectionError(), 502, "archive_unavailable")):
+        for failure, status, code, count in (
+            (ReadTimeout(), 504, "archive_timeout", 3),
+            (ConnectionError(), 502, "archive_unavailable", 3),
+            (SSLError(), 502, "archive_unavailable", 1),
+        ):
+            attempts = []
             response = client.get("/api/archive/search", params={**POSITION, "release": "QR3"})
             assert response.status_code == status
             assert response.json()["error"]["code"] == code
+            assert len(attempts) == count
         response = client.get("/api/archive/search", params={**POSITION, "start_mjd": 61000, "end_mjd": 60900})
         assert response.status_code == 422
         assert response.json()["error"]["code"] == "invalid_time_range"

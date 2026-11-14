@@ -3,6 +3,7 @@ import os
 import socket
 import subprocess
 import sys
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from hashlib import sha256
@@ -107,6 +108,10 @@ def irsa(tmp_path):
             query = parse_qs(url.query)
             self.server.calls.append((url.path, query))
             if url.path == "/SIA" and query.get("COLLECTION"):
+                if self.server.catalog_failures:
+                    status, retry_after = self.server.catalog_failures.popleft()
+                    self.send_status(status, retry_after)
+                    return
                 catalog = table[table["obs_collection"] == query["COLLECTION"][0]]
                 ids = query.get("ID")
                 if ids:
@@ -123,9 +128,27 @@ def irsa(tmp_path):
             elif url.path in payloads and query == {"center": ["269.45,4.7"], "size": ["0.05"]}:
                 indexes = list(payloads)
                 payload = payloads[indexes[1]] if self.server.wrong_fits else payloads[url.path]
+                if self.server.cutout_failures:
+                    status = self.server.cutout_failures.popleft()
+                    if status == "disconnect":
+                        prefix = payload[:65536].ljust(65536, b"\0")
+                        self.send_response(200)
+                        self.send_header("Content-Length", str(len(prefix) + 1))
+                        self.end_headers()
+                        self.wfile.write(prefix)
+                    else:
+                        self.send_status(status)
+                    return
                 self.send_payload(payload, "application/fits")
             else:
                 self.send_error(404)
+
+        def send_status(self, status, retry_after=None):
+            self.send_response(status)
+            self.send_header("Content-Length", "0")
+            if retry_after is not None:
+                self.send_header("Retry-After", retry_after)
+            self.end_headers()
 
         def send_payload(self, payload, content_type):
             self.send_response(200)
@@ -136,6 +159,9 @@ def irsa(tmp_path):
 
     with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
         server.calls = []
+        server.payloads = payloads
+        server.catalog_failures = deque()
+        server.cutout_failures = deque()
         server.wrong_fits = False
         server.untrusted_url = False
         thread = Thread(target=server.serve_forever, daemon=True)
@@ -156,10 +182,11 @@ def running_api(irsa, tmp_path):
     with (tmp_path / f"uvicorn-{port}.log").open("w+b") as log:
         with subprocess.Popen([sys.executable, str(Path(__file__).resolve()), str(port),
                                str(archive.server_port), str(manifest_path), str(tmp_path)],
-                              cwd=ROOT, stdout=log, stderr=subprocess.STDOUT) as process:
+                              cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
+                              env=os.environ | {"OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1"}) as process:
             try:
                 with httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=20, trust_env=False) as client:
-                    deadline = monotonic() + 25
+                    deadline = monotonic() + 45
                     while process.poll() is None and monotonic() < deadline:
                         try:
                             if client.get("/api/health", timeout=0.5).status_code == 200:
@@ -257,12 +284,58 @@ def test_archive_import_rejects_untrusted_and_invalid_fits(irsa, tmp_path):
 
         server.untrusted_url = False
         server.wrong_fits = True
+        start = len(server.calls)
         invalid = client.post("/api/archive/import", json=payload)
         assert invalid.status_code == 502
         assert invalid.json()["error"]["code"] == "invalid_archive_fits"
+        assert len(server.calls) == start + 2
         assert not list((tmp_path / "imports").iterdir())
         assert client.get("/api/datasets").json()["observations"] == []
         server.wrong_fits = False
+        assert client.post("/api/archive/import", json=payload).status_code == 201
+
+
+def test_archive_retries_transient_errors_and_cleans_up_after_exhaustion(irsa, tmp_path):
+    server, _, _ = irsa
+    with running_api(irsa, tmp_path) as client:
+        server.catalog_failures.append((429, "60"))
+        limited = client.get("/api/archive/search", params=CENTER)
+        assert limited.status_code == 502
+        assert limited.json()["error"]["code"] == "archive_unavailable"
+        assert len(server.calls) == 1
+
+        server.catalog_failures.append((503, "0"))
+        search = client.get("/api/archive/search", params=CENTER)
+        assert search.status_code == 200, search.text
+        assert len(server.calls) == 3
+        first, second = search.json()["observations"]
+        payload = {**CUTOUT, "archive_id": first["archive_id"]}
+        server.catalog_failures.append((502, None))
+        server.cutout_failures.extend([503, "disconnect"])
+        response = client.post("/api/archive/import", json=payload)
+        assert response.status_code == 201, response.text
+        path = urlsplit(first["fits_url"]).path
+        assert [requested for requested, _ in server.calls[3:]] == ["/SIA", "/SIA", path, path, path]
+        first_epoch = response.json()["epoch"]
+        file = tmp_path / "imports" / first_epoch / "cutout.fits"
+        assert file.read_bytes() == server.payloads[path]
+        assert sha256(server.payloads[path]).hexdigest() == response.json()["sha256"]
+
+        path = urlsplit(second["fits_url"]).path
+        payload = {**CUTOUT, "archive_id": second["archive_id"]}
+        start = len(server.calls)
+        server.cutout_failures.extend(["disconnect", 503, 504])
+        failed = client.post("/api/archive/import", json=payload)
+        assert failed.status_code == 504, failed.text
+        assert failed.json()["error"]["code"] == "archive_timeout"
+        assert [requested for requested, _ in server.calls[start:]] == ["/SIA", path, path, path]
+        assert [entry.name for entry in (tmp_path / "imports").iterdir()] == [first_epoch]
+
+        start = len(server.calls)
+        server.cutout_failures.append(404)
+        invalid = client.post("/api/archive/import", json=payload)
+        assert invalid.status_code == 422 and invalid.json()["error"]["code"] == "cutout_unavailable"
+        assert [requested for requested, _ in server.calls[start:]] == ["/SIA", path]
         assert client.post("/api/archive/import", json=payload).status_code == 201
 
 

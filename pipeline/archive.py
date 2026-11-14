@@ -1,19 +1,28 @@
-from functools import partial
+from collections.abc import Callable
+from contextlib import ExitStack
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from math import isfinite
 from pathlib import Path
-from typing import Literal
+from time import monotonic, sleep
+from typing import Literal, TypeVar
 
 from astroquery.ipac.irsa import IrsaClass
 from numpy.ma import is_masked
 from pydantic import BaseModel, HttpUrl
 from pyvo.dal import DALAccessError, SIA2Service
-from requests.exceptions import RequestException, Timeout
+from requests.exceptions import ChunkedEncodingError, ConnectionError, RequestException, SSLError, Timeout
+from urllib3.exceptions import ProtocolError, ReadTimeoutError
 
 from pipeline.catalog import DataError, Observation
 
 ArchiveRelease = Literal["DR1", "QR3"]
 REQUIRED_COLUMNS = {"obs_id", "obs_publisher_did", "obs_collection", "access_url", "energy_bandpassname",
                     "t_min", "t_max", "em_min", "em_max"}
+RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
+RETRY_DELAYS = (0.25, 0.5)
+MAX_RETRY_AFTER = 2.0
+Result = TypeVar("Result")
 
 
 class ArchiveObservation(BaseModel):
@@ -37,6 +46,58 @@ class ArchiveSearch(BaseModel):
     observations: list[ArchiveObservation]
 
 
+def _retry_after(value: str | None) -> float:
+    if value is None:
+        return 0
+    try:
+        if value.isascii() and value.isdecimal():
+            return int(value)
+        date = parsedate_to_datetime(value)
+        if date.tzinfo is None:
+            date = date.replace(tzinfo=timezone.utc)
+        return max(0, (date - datetime.now(timezone.utc)).total_seconds())
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def irsa_timeouts(deadline: float, read_timeout: float) -> tuple[float, float]:
+    remaining = deadline - monotonic()
+    if remaining <= 0:
+        raise DataError("archive_timeout", "The IRSA archive took too long to respond", 504)
+    connect = min(5, remaining / 2)
+    return connect, min(read_timeout, remaining - connect)
+
+
+def retry_irsa(operation: Callable[[float], Result], *, budget: float) -> Result:
+    """Retry an IRSA GET within its request budget, starting each attempt from scratch."""
+    deadline = monotonic() + budget
+    for delay in (*RETRY_DELAYS, None):
+        try:
+            return operation(deadline)
+        except (DALAccessError, RequestException, ProtocolError, ReadTimeoutError) as exc:
+            cause = getattr(exc, "cause", None) or exc
+            response = getattr(cause, "response", None)
+            status = response.status_code if response is not None else getattr(exc, "code", None)
+            # Requests wraps timeouts during iter_content in ConnectionError.
+            timed_out = status in (408, 504) or isinstance(cause, (Timeout, ReadTimeoutError)) or (
+                isinstance(cause, ConnectionError) and bool(cause.args)
+                and isinstance(cause.args[0], ReadTimeoutError)
+            )
+            network_failure = isinstance(
+                cause, (Timeout, ConnectionError, ChunkedEncodingError, ProtocolError, ReadTimeoutError)
+            ) and not isinstance(cause, SSLError)
+            retryable = status in RETRYABLE_STATUS or (status in (None, 0) and network_failure)
+            wait = _retry_after(response.headers.get("Retry-After")) if response is not None else 0
+            if retryable and delay is not None and wait <= MAX_RETRY_AFTER:
+                wait = max(delay, wait)
+                if wait < deadline - monotonic():
+                    sleep(wait)
+                    continue
+            if timed_out:
+                raise DataError("archive_timeout", "The IRSA archive took too long to respond", 504) from exc
+            raise DataError("archive_unavailable", "The IRSA archive could not complete the request", 502) from exc
+
+
 def _number(value, scale: float = 1.0) -> float | None:
     if is_masked(value):
         return None
@@ -47,21 +108,27 @@ def _number(value, scale: float = 1.0) -> float | None:
 def _query_sia(collection: str, *, maxrec: int, position: tuple[float, float, float] | None = None,
                wavelength_um: float | None = None, time_range: str | None = None,
                archive_id: str | None = None):
-    archive = IrsaClass()
-    with archive._session as session:
-        # PyVO submits its own requests. Apply a per-client timeout and use
-        # IRSA's published SIA2 query URL directly, without capability discovery.
-        session.request = partial(session.request, timeout=(5, 15))
-        archive._sia = SIA2Service(archive.sia_url, session=session, check_baseurl=False)
-        constraints = {"TIME": time_range} if time_range is not None else {}
-        band = wavelength_um * 1e-6 if wavelength_um is not None else None
-        try:
-            table = archive.query_sia(pos=position, collection=collection, maxrec=maxrec, band=band,
-                                      publisher_did=archive_id, **constraints)
-        except (DALAccessError, RequestException) as exc:
-            if isinstance(exc, Timeout) or isinstance(getattr(exc, "cause", None), Timeout):
-                raise DataError("archive_timeout", "The IRSA archive took too long to respond", 504) from exc
-            raise DataError("archive_unavailable", "The IRSA archive could not complete the query", 502) from exc
+    constraints = {"TIME": time_range} if time_range is not None else {}
+    band = wavelength_um * 1e-6 if wavelength_um is not None else None
+
+    def query(deadline):
+        archive = IrsaClass()
+        with archive._session as session, ExitStack() as responses:
+            timeout = irsa_timeouts(deadline, 15)
+            send = session.request
+
+            def request(*args, **kwargs):
+                response = responses.enter_context(send(*args, timeout=timeout, **kwargs))
+                response.raise_for_status()
+                return response
+
+            # Check HTTP status before PyVO reads the VOTable.
+            session.request = request
+            archive._sia = SIA2Service(archive.sia_url, session=session, check_baseurl=False)
+            return archive.query_sia(pos=position, collection=collection, maxrec=maxrec, band=band,
+                                     publisher_did=archive_id, **constraints)
+
+    table = retry_irsa(query, budget=30)
     if not REQUIRED_COLUMNS.issubset(table.colnames):
         raise DataError("invalid_archive_response", "IRSA returned an unexpected image catalog", 502)
     return table

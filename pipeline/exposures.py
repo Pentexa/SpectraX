@@ -10,9 +10,8 @@ from astropy.coordinates import SkyCoord
 from astropy.wcs import NoConvergence
 from pydantic import ConfigDict, Field, FiniteFloat, ValidationError
 from requests import get
-from requests.exceptions import RequestException, Timeout
 
-from pipeline.archive import find_image
+from pipeline.archive import find_image, irsa_timeouts, retry_irsa
 from pipeline.catalog import DataError, Observation, Position
 from pipeline.images import read_fits_image
 
@@ -71,17 +70,17 @@ def _cutout_url(row, release: str, obs_id: str, detector: int, request: ImportRe
 
 
 def _download_cutout(url: str, path: Path) -> tuple[int, str]:
-    digest = hashlib.sha256()
-    size = 0
-    deadline = monotonic() + 60
-    try:
-        with get(url, timeout=(5, 25), stream=True, allow_redirects=False,
+    def download(deadline):
+        digest = hashlib.sha256()
+        size = 0
+        with get(url, timeout=irsa_timeouts(deadline, 25), stream=True, allow_redirects=False,
                  headers={"Accept-Encoding": "identity"}) as response:
             if response.status_code in (400, 404, 416, 422):
                 raise DataError("cutout_unavailable", "IRSA could not cut out this position from the exposure", 422)
+            response.raise_for_status()
             if response.status_code != 200:
                 raise DataError("archive_unavailable", "IRSA could not deliver the cutout", 502)
-            with path.open("xb") as output:
+            with path.open("wb") as output:
                 for chunk in response.iter_content(chunk_size=65536):
                     if monotonic() > deadline:
                         raise DataError("archive_timeout", "IRSA took too long to deliver the cutout", 504)
@@ -90,11 +89,9 @@ def _download_cutout(url: str, path: Path) -> tuple[int, str]:
                         raise DataError("invalid_archive_fits", "IRSA cutout exceeds the file size limit", 502)
                     output.write(chunk)
                     digest.update(chunk)
-    except Timeout as exc:
-        raise DataError("archive_timeout", "IRSA took too long to deliver the cutout", 504) from exc
-    except RequestException as exc:
-        raise DataError("archive_unavailable", "IRSA could not deliver the complete cutout", 502) from exc
-    return size, digest.hexdigest()
+        return size, digest.hexdigest()
+
+    return retry_irsa(download, budget=60)
 
 
 def _observation(request: ImportRequest, epoch: str, path: Path) -> Observation:
