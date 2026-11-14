@@ -11,6 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from pipeline.archive import ArchiveRelease, ArchiveSearch, search_images
 from pipeline.catalog import Cube, DataError, Position, data_path, load_manifest
 from pipeline.compare import Mode, compare
 from pipeline.images import read_image
@@ -23,6 +24,7 @@ RightAscension = Annotated[float, Query(ge=0, lt=360, description="ICRS right as
 Declination = Annotated[float, Query(ge=-90, le=90, description="ICRS declination in degrees")]
 Fov = Annotated[float, Query(gt=0, le=1, description="Square cutout width in degrees")]
 ReleaseFilter = Annotated[str, Query(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_.-]+$")]
+ArchiveDate = Annotated[float, Query(ge=0, le=100_000, description="UTC Modified Julian Date")]
 
 
 def create_app(manifest_path: Path | None = None, data_dir: Path | None = None) -> FastAPI:
@@ -79,6 +81,22 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None) 
         observations, cubes = manifest.select_release(release) if release else (manifest.observations, manifest.cubes)
         return {'observations': [entry.metadata(data_dir) for entry in observations],
                 'cubes': [entry.metadata(data_dir) for entry in cubes]}
+
+    @api.get('/api/archive/search')
+    def archive_search(
+        ra: RightAscension,
+        dec: Declination,
+        release: ArchiveRelease = 'DR1',
+        radius_deg: Annotated[float, Query(gt=0, le=1)] = 0.01,
+        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+        wavelength_um: Annotated[float, Query(gt=0, le=10)] | None = None,
+        start_mjd: ArchiveDate | None = None,
+        end_mjd: ArchiveDate | None = None,
+    ) -> ArchiveSearch:
+        return search_images(
+            release=release, ra=ra, dec=dec, radius_deg=radius_deg, limit=limit, wavelength_um=wavelength_um,
+            start_mjd=start_mjd, end_mjd=end_mjd, local_observations=api.state.manifest.observations, data_dir=data_dir,
+        )
 
     @api.get('/api/compare')
     def compare_epochs(ra: RightAscension, dec: Declination, fov: Fov, epoch_a: Epoch, epoch_b: Epoch,
