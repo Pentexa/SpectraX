@@ -67,11 +67,12 @@ def _query_sia(collection: str, *, maxrec: int, position: tuple[float, float, fl
     return table
 
 
-def find_image(release: ArchiveRelease, archive_id: str):
+def find_image(release: ArchiveRelease, archive_id: str, ra: float, dec: float):
     collection = f"spherex_{release.lower()}"
-    table = _query_sia(collection, maxrec=2, archive_id=archive_id)
+    # Bound IRSA's catalog lookup to the requested cutout center.
+    table = _query_sia(collection, maxrec=2, position=(ra, dec, 0.001), archive_id=archive_id)
     if len(table) == 0:
-        raise DataError("unknown_archive_image", "IRSA has no image with that archive ID", 404)
+        raise DataError("unknown_archive_image", "IRSA has no matching image at the requested position", 404)
     if len(table) != 1 or table[0]["obs_publisher_did"] != archive_id or table[0]["obs_collection"] != collection:
         raise DataError("invalid_archive_response", "IRSA did not return a unique matching image", 502)
     return table[0]

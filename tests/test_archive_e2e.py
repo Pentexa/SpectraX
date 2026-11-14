@@ -110,6 +110,9 @@ def irsa(tmp_path):
                 catalog = table[table["obs_collection"] == query["COLLECTION"][0]]
                 ids = query.get("ID")
                 if ids:
+                    if query.get("POS") != ["CIRCLE 269.45 4.7 0.001"]:
+                        self.send_error(400)
+                        return
                     catalog = catalog[catalog["obs_publisher_did"] == ids[0]]
                 if self.server.untrusted_url and len(catalog):
                     catalog = catalog.copy()

@@ -102,7 +102,7 @@ def _observation(request: ImportRequest, epoch: str, path: Path) -> Observation:
     detector = int(detector_value)
     band = f"SPHEREx-D{detector}"
     release_id = release.upper()
-    row = find_image(release_id, request.archive_id)
+    row = find_image(release_id, request.archive_id, request.ra, request.dec)
     if row["obs_id"] != obs_id or row["energy_bandpassname"] != band:
         raise DataError("invalid_archive_response", "IRSA returned inconsistent observation metadata", 502)
     url, calibration = _cutout_url(row, release, obs_id, detector, request)
