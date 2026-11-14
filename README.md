@@ -43,7 +43,7 @@ Run `.\.venv\Scripts\python.exe -m pipeline.benchmark_barnard` to check target c
 
 ## Backend CI/CD
 
-[GitHub Actions](https://github.com/Pentexa/SkyHunter/actions/workflows/backend.yml) runs the Python 3.11 test suite on pull requests targeting `main` and on each push to `main`. FITS integration tests run locally when the samples are installed. After tests pass on `main`, the workflow builds the container, checks `/api/health` and the OpenAPI contract, then publishes `ghcr.io/pentexa/skyhunter-api:main` and `ghcr.io/pentexa/skyhunter-api:sha-<full-commit-sha>` using GitHub's workflow token.
+[GitHub Actions](https://github.com/Pentexa/SkyHunter/actions/workflows/backend.yml) runs the Python 3.11 test suite on pull requests targeting `main` and on each push to `main`. After tests pass on `main`, the workflow builds the container, verifies the public DR1 files against the manifest, and mounts them read-only for an HTTP smoke test of the real difference image, spectrum and all six detector layers. Successful runs publish `ghcr.io/pentexa/skyhunter-api:main` and `ghcr.io/pentexa/skyhunter-api:sha-<full-commit-sha>` using GitHub's workflow token. The FITS files are cached by manifest hash and stay outside the published image.
 
 Run the published image locally. Authenticate with GHCR first if the package is private.
 
@@ -57,3 +57,5 @@ For FITS-backed endpoints, download the samples using the local setup above, the
 $Samples = (Resolve-Path 'data/samples').Path
 docker run --rm -p 127.0.0.1:8765:8765 --mount "type=bind,source=$Samples,target=/data,readonly" ghcr.io/pentexa/skyhunter-api:main
 ```
+
+With the sample data mounted, run `python scripts/smoke_backend.py` from another terminal to repeat the release smoke test.
