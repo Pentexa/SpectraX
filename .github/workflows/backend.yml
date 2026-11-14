@@ -55,12 +55,13 @@ jobs:
             --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
             --tag "$IMAGE:sha-$GITHUB_SHA" .
       - name: Verify container API
+        shell: bash
         run: |
           container=$(docker run --detach --publish 127.0.0.1:8765:8765 "$IMAGE:sha-$GITHUB_SHA")
           trap 'docker logs "$container"; docker rm -f "$container" >/dev/null' EXIT
-          curl --fail --silent --show-error --max-time 2 --retry 20 --retry-connrefused --retry-delay 1 \
-            http://127.0.0.1:8765/api/health \
-            | jq -e '.status == "ok" and .products > 0 and .available_locally == 0'
+          curl --fail --silent --show-error --max-time 2 --retry 20 --retry-all-errors --retry-delay 1 \
+            --output "$RUNNER_TEMP/backend-health.json" http://127.0.0.1:8765/api/health
+          jq -e '.status == "ok" and .products > 0 and .available_locally == 0' "$RUNNER_TEMP/backend-health.json"
           curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8765/openapi.json \
             | jq -e '.paths | has("/api/compare") and has("/api/spectrum")'
       - name: Push image to GitHub Container Registry
