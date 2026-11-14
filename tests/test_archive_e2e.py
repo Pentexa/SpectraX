@@ -10,7 +10,7 @@ from hashlib import sha256
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
 from pathlib import Path
-from threading import Thread
+from threading import Barrier, Thread
 from time import monotonic, sleep
 from urllib.parse import parse_qs, urlsplit
 
@@ -139,6 +139,8 @@ def irsa(tmp_path):
                     else:
                         self.send_status(status)
                     return
+                if self.server.cutout_barrier is not None:
+                    self.server.cutout_barrier.wait(timeout=10)
                 self.send_payload(payload, "application/fits")
             else:
                 self.send_error(404)
@@ -153,7 +155,8 @@ def irsa(tmp_path):
         def send_payload(self, payload, content_type):
             self.send_response(200)
             self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(payload)))
+            if content_type != "application/fits" or not self.server.omit_fits_length:
+                self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
             self.wfile.write(payload)
 
@@ -162,6 +165,8 @@ def irsa(tmp_path):
         server.payloads = payloads
         server.catalog_failures = deque()
         server.cutout_failures = deque()
+        server.cutout_barrier = None
+        server.omit_fits_length = False
         server.wrong_fits = False
         server.untrusted_url = False
         thread = Thread(target=server.serve_forever, daemon=True)
@@ -174,7 +179,7 @@ def irsa(tmp_path):
 
 
 @contextmanager
-def running_api(irsa, tmp_path):
+def running_api(irsa, tmp_path, *, quota_bytes=1024**3):
     archive, manifest_path, _ = irsa
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -183,7 +188,8 @@ def running_api(irsa, tmp_path):
         with subprocess.Popen([sys.executable, str(Path(__file__).resolve()), str(port),
                                str(archive.server_port), str(manifest_path), str(tmp_path)],
                               cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
-                              env=os.environ | {"OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1"}) as process:
+                              env=os.environ | {"OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1",
+                                                "PLANET_X_IMPORT_QUOTA_BYTES": str(quota_bytes)}) as process:
             try:
                 with httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=20, trust_env=False) as client:
                     deadline = monotonic() + 45
@@ -289,7 +295,7 @@ def test_archive_import_rejects_untrusted_and_invalid_fits(irsa, tmp_path):
         assert invalid.status_code == 502
         assert invalid.json()["error"]["code"] == "invalid_archive_fits"
         assert len(server.calls) == start + 2
-        assert not list((tmp_path / "imports").iterdir())
+        assert not any(path.is_dir() for path in (tmp_path / "imports").iterdir())
         assert client.get("/api/datasets").json()["observations"] == []
         server.wrong_fits = False
         assert client.post("/api/archive/import", json=payload).status_code == 201
@@ -331,7 +337,7 @@ def test_archive_retries_transient_errors_and_cleans_up_after_exhaustion(irsa, t
         assert failed.status_code == 504, failed.text
         assert failed.json()["error"]["code"] == "archive_timeout"
         assert [requested for requested, _ in server.calls[start:]] == ["/SIA", path, path, path]
-        assert [entry.name for entry in (tmp_path / "imports").iterdir()] == [first_epoch]
+        assert [entry.name for entry in (tmp_path / "imports").iterdir() if entry.is_dir()] == [first_epoch]
 
         start = len(server.calls)
         server.cutout_failures.append(404)
@@ -339,6 +345,48 @@ def test_archive_retries_transient_errors_and_cleans_up_after_exhaustion(irsa, t
         assert invalid.status_code == 422 and invalid.json()["error"]["code"] == "cutout_unavailable"
         assert [requested for requested, _ in server.calls[start:]] == ["/SIA", path]
         assert client.post("/api/archive/import", json=payload).status_code == 201
+
+
+def test_import_quota_across_processes_and_restart(irsa, tmp_path):
+    server, _, real_samples = irsa
+    directory = tmp_path / "imports"
+    quota = max(map(len, server.payloads.values())) + 2048
+    with running_api(irsa, tmp_path, quota_bytes=quota) as first, running_api(irsa, tmp_path, quota_bytes=quota) as second:
+        records = first.get("/api/archive/search", params=CENTER).json()["observations"]
+        payloads = [{**CUTOUT, "archive_id": item["archive_id"]} for item in records]
+        server.cutout_barrier = Barrier(2)
+        try:
+            with ThreadPoolExecutor(2) as pool:
+                pending = [pool.submit(client.post, "/api/archive/import", json=payload)
+                           for client, payload in zip((first, second), payloads)]
+                responses = [future.result() for future in pending]
+        finally:
+            server.cutout_barrier = None
+        assert sorted(result.status_code for result in responses) == [201, 507], [r.text for r in responses]
+        winner = next(index for index, result in enumerate(responses) if result.status_code == 201)
+        stored = responses[winner].json()
+        epoch = stored["epoch"]
+        error = responses[1 - winner].json()["error"]
+        assert error["code"] == "import_quota_exceeded"
+        assert error["details"]["limit_bytes"] == quota
+        assert [entry.name for entry in directory.iterdir() if entry.is_dir()] == [epoch]
+        stored_bytes = sum(path.stat().st_size for path in (directory / epoch).iterdir())
+        assert stored["size_bytes"] < stored_bytes <= quota
+
+    with running_api(irsa, tmp_path, quota_bytes=stored_bytes + 1) as client:
+        start = len(server.calls)
+        hit = client.post("/api/archive/import", json=payloads[winner])
+        assert hit.status_code == 200 and hit.json() == stored
+        assert len(server.calls) == start
+        server.omit_fits_length = True
+        blocked = client.post("/api/archive/import", json=payloads[1 - winner])
+        assert blocked.status_code == 507, blocked.text
+        assert blocked.json()["error"]["details"]["used_bytes"] == stored_bytes
+        assert client.get("/api/datasets").json()["observations"] == [stored]
+        coords = {"ra": 269.448214, "dec": 4.695946} if real_samples else CENTER
+        flux = client.get("/api/photometry", params={**coords, "epoch": epoch})
+        assert flux.status_code == 200, flux.text
+        assert [entry.name for entry in directory.iterdir() if entry.is_dir()] == [epoch]
 
 
 if __name__ == "__main__":

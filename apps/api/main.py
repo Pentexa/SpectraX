@@ -16,6 +16,7 @@ from pipeline.catalog import Cube, DataError, Position, data_path, load_manifest
 from pipeline.compare import Mode, compare
 from pipeline.exposures import ImportRequest, get_import, import_exposure, list_imports
 from pipeline.images import read_image
+from pipeline.import_storage import DEFAULT_IMPORT_QUOTA_BYTES, ImportQuota
 from pipeline.ingest import ROOT, configured_path
 from pipeline.photometry import Photometry, measure_source
 from pipeline.spectra import detector_layer, layers, spectrum
@@ -34,6 +35,13 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
     manifest_path = manifest_path or configured_path('PLANET_X_MANIFEST', 'data/manifests/spherex-dr1.json')
     data_dir = data_dir or configured_path('PLANET_X_DATA_DIR', 'data/samples')
     import_dir = import_dir or Path(os.environ.get('PLANET_X_IMPORT_DIR', data_dir / 'imports'))
+    try:
+        quota_bytes = int(os.environ.get('PLANET_X_IMPORT_QUOTA_BYTES', DEFAULT_IMPORT_QUOTA_BYTES))
+        if quota_bytes <= 0:
+            raise ValueError
+    except ValueError as exc:
+        raise ValueError('PLANET_X_IMPORT_QUOTA_BYTES must be a positive integer') from exc
+    import_quota = ImportQuota(import_dir, quota_bytes)
 
     @asynccontextmanager
     async def lifespan(api: FastAPI):
@@ -121,9 +129,11 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
                                 *list_imports(import_dir)],
         )
 
-    @api.post('/api/archive/import', status_code=201, responses={200: {'description': 'Existing cutout'}})
+    @api.post('/api/archive/import', status_code=201, responses={
+        200: {'description': 'Existing cutout'}, 507: {'description': 'Imported exposure storage quota exceeded'},
+    })
     def archive_import(request: ImportRequest, response: Response):
-        observation, directory, created = import_exposure(import_dir, request)
+        observation, directory, created = import_exposure(import_quota, request)
         response.status_code = 201 if created else 200
         return observation.metadata(directory)
 

@@ -14,14 +14,14 @@ from requests import get
 from pipeline.archive import find_image, irsa_timeouts, retry_irsa
 from pipeline.catalog import DataError, Observation, Position
 from pipeline.images import read_fits_image
+from pipeline.import_storage import (
+    FILENAME, IMPORTED_EPOCH, METADATA, QUOTA_ERROR, STAGING_PREFIX, ImportQuota,
+)
 
 ARCHIVE_ID = re.compile(r"^ivo://irsa\.ipac/spherex_(dr1|qr3)\?([A-Za-z0-9_]{1,50})/D([1-6])$")
-IMPORTED_EPOCH = re.compile(r"^irsa-[a-f0-9]{64}$")
 IRSA_HOST = "irsa.ipac.caltech.edu"
 MAX_SIZE = 32 * 1024**2
 REJECT_FLAG_BITS = 0xFFFFFFFF ^ (1 << 21)
-METADATA = "observation.json"
-FILENAME = "cutout.fits"
 
 
 class ImportRequest(Position):
@@ -69,7 +69,7 @@ def _cutout_url(row, release: str, obs_id: str, detector: int, request: ImportRe
     return f"https://{IRSA_HOST}{url.path}?center={request.ra},{request.dec}&size={request.fov}", match[2]
 
 
-def _download_cutout(url: str, path: Path) -> tuple[int, str]:
+def _download_cutout(url: str, path: Path, quota: ImportQuota) -> tuple[int, str]:
     def download(deadline):
         digest = hashlib.sha256()
         size = 0
@@ -80,6 +80,16 @@ def _download_cutout(url: str, path: Path) -> tuple[int, str]:
             response.raise_for_status()
             if response.status_code != 200:
                 raise DataError("archive_unavailable", "IRSA could not deliver the cutout", 502)
+
+            # Reserve the announced size when available. Enforce the quota
+            # while streaming even if the length is missing or encoded.
+            try:
+                size_hint = int(response.headers.get("Content-Length", "0"))
+            except ValueError:
+                size_hint = 0
+            if size_hint > MAX_SIZE:
+                raise DataError("invalid_archive_fits", "IRSA cutout exceeds the file size limit", 502)
+            reserved = 0
             with path.open("wb") as output:
                 for chunk in response.iter_content(chunk_size=65536):
                     if monotonic() > deadline:
@@ -87,14 +97,21 @@ def _download_cutout(url: str, path: Path) -> tuple[int, str]:
                     size += len(chunk)
                     if size > MAX_SIZE:
                         raise DataError("invalid_archive_fits", "IRSA cutout exceeds the file size limit", 502)
+                    if size > reserved:
+                        new_reservation = max(size, size_hint)
+                        with quota.write_lock():
+                            quota.check_space(new_reservation - reserved)
+                            output.truncate(new_reservation)
+                        reserved = new_reservation
                     output.write(chunk)
                     digest.update(chunk)
+                output.truncate(size)
         return size, digest.hexdigest()
 
     return retry_irsa(download, budget=60)
 
 
-def _observation(request: ImportRequest, epoch: str, path: Path) -> Observation:
+def _observation(request: ImportRequest, epoch: str, path: Path, quota: ImportQuota) -> Observation:
     release, obs_id, detector_value = ARCHIVE_ID.fullmatch(request.archive_id).groups()
     detector = int(detector_value)
     band = f"SPHEREx-D{detector}"
@@ -103,7 +120,7 @@ def _observation(request: ImportRequest, epoch: str, path: Path) -> Observation:
     if row["obs_id"] != obs_id or row["energy_bandpassname"] != band:
         raise DataError("invalid_archive_response", "IRSA returned inconsistent observation metadata", 502)
     url, calibration = _cutout_url(row, release, obs_id, detector, request)
-    size, digest = _download_cutout(url, path)
+    size, digest = _download_cutout(url, path, quota)
     try:
         image = read_fits_image(path, "spherex-lvf", REJECT_FLAG_BITS)
         start = image.metadata["start_mjd"]
@@ -134,7 +151,8 @@ def _observation(request: ImportRequest, epoch: str, path: Path) -> Observation:
     )
 
 
-def import_exposure(directory: Path, request: ImportRequest) -> tuple[Observation, Path, bool]:
+def import_exposure(quota: ImportQuota, request: ImportRequest) -> tuple[Observation, Path, bool]:
+    directory = quota.directory
     coordinates = (request.ra + 0.0, request.dec + 0.0, request.fov)
     epoch = "irsa-" + hashlib.sha256(f"{request.archive_id}:{coordinates}".encode()).hexdigest()
     existing = get_import(directory, epoch)
@@ -143,20 +161,26 @@ def import_exposure(directory: Path, request: ImportRequest) -> tuple[Observatio
     target = directory / epoch
     try:
         directory.mkdir(parents=True, exist_ok=True)
-        with TemporaryDirectory(prefix=".download-", dir=directory) as staging:
+        with quota.write_lock():
+            quota.check_space(1)
+        with TemporaryDirectory(prefix=STAGING_PREFIX, dir=directory) as staging:
             # The sibling rename publishes metadata and FITS together, also
             # when two ASGI workers request the same cutout concurrently.
             pending = Path(staging) / epoch
             pending.mkdir()
-            observation = _observation(request, epoch, pending / FILENAME)
-            (pending / METADATA).write_text(observation.model_dump_json(), encoding="utf-8")
-            try:
-                pending.rename(target)
-            except OSError:
+            observation = _observation(request, epoch, pending / FILENAME, quota)
+            metadata = observation.model_dump_json().encode("utf-8")
+            with quota.write_lock():
                 existing = get_import(directory, epoch)
                 if existing is not None:
                     return existing[0], existing[1], False
-                raise
+                quota.check_space(len(metadata))
+                (pending / METADATA).write_bytes(metadata)
+                pending.rename(target)
+    except DataError as exc:
+        if exc.code == QUOTA_ERROR and (existing := get_import(directory, epoch)) is not None:
+            return existing[0], existing[1], False
+        raise
     except OSError as exc:
         raise DataError("import_storage_unavailable", "Could not write the imported exposure", 503) from exc
     return observation, target, True
