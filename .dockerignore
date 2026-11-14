@@ -1,0 +1,11 @@
+**
+!pyproject.toml
+!apps/
+!apps/**
+!pipeline/
+!pipeline/**
+!data/
+!data/manifests/
+!data/manifests/**
+**/__pycache__/
+**/*.pyc

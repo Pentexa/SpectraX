@@ -40,3 +40,20 @@ Difference is `B − A`, and stack is the two-sample mean. Arithmetic requires c
 Run `.\.venv\Scripts\python.exe -m pytest -q`. The real-data test runs when the FITS files are present and covers comparison, spectrum, and all six detector layers. The remaining tests use synthetic fixtures. See the [data inventory and citations](docs/DATA_SOURCES.md) and the [versioned manifest](data/manifests/spherex-dr1.json) for exact files. Switch `PLANET_X_MANIFEST` to load a new release with the same schema and supported FITS layouts, then run `planet-x-data` before restarting the API.
 
 Run `.\.venv\Scripts\python.exe -m pipeline.benchmark_barnard` to check target coverage and quality at the expected coordinates of Barnard's Star. See the [benchmark report](docs/benchmarks/BARNARDS_STAR.md) for results and full-exposure commands.
+
+## Backend CI/CD
+
+[GitHub Actions](https://github.com/Pentexa/SkyHunter/actions/workflows/backend.yml) runs the Python 3.11 test suite on pull requests targeting `main` and on each push to `main`. FITS integration tests run locally when the samples are installed. After tests pass on `main`, the workflow builds the container, checks `/api/health` and the OpenAPI contract, then publishes `ghcr.io/pentexa/skyhunter-api:main` and `ghcr.io/pentexa/skyhunter-api:sha-<full-commit-sha>` using GitHub's workflow token.
+
+Run the published image locally. Authenticate with GHCR first if the package is private.
+
+```powershell
+docker run --rm -p 127.0.0.1:8765:8765 ghcr.io/pentexa/skyhunter-api:main
+```
+
+For FITS-backed endpoints, download the samples using the local setup above, then mount them read-only. A hosting service can use the same image and provide a volume for the data.
+
+```powershell
+$Samples = (Resolve-Path 'data/samples').Path
+docker run --rm -p 127.0.0.1:8765:8765 --mount "type=bind,source=$Samples,target=/data,readonly" ghcr.io/pentexa/skyhunter-api:main
+```
