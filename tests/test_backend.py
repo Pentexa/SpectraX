@@ -176,6 +176,16 @@ def test_health_validation_and_no_cube(client):
     assert response.status_code == 409
 
 
+def test_photometry_requires_a_calibrated_exposure(client):
+    position = {'ra': POSITION['ra'], 'dec': POSITION['dec']}
+    uncalibrated = client.get('/api/photometry', params={**position, 'epoch': 'a'})
+    assert uncalibrated.status_code == 409
+    assert uncalibrated.json()['error']['code'] == 'photometry_unavailable'
+    missing = client.get('/api/photometry', params={**position, 'epoch': 'unknown'})
+    assert missing.status_code == 404
+    assert missing.json()['error']['code'] == 'unknown_epoch'
+
+
 def test_ingest_fallback_and_idempotency(test_data, monkeypatch):
     manifest, root = test_data
     product = load_manifest(manifest).observations[0]

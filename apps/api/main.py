@@ -15,6 +15,7 @@ from pipeline.catalog import Cube, DataError, Position, data_path, load_manifest
 from pipeline.compare import Mode, compare
 from pipeline.images import read_image
 from pipeline.ingest import ROOT, configured_path
+from pipeline.photometry import Photometry, measure_source
 from pipeline.spectra import detector_layer, layers, spectrum
 
 Epoch = Annotated[str, Query(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_.-]+$")]
@@ -100,6 +101,15 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None) 
                 raise DataError('spectrum_unavailable', 'This exposure has no calibrated channel cube. See /api/datasets.', 409)
             raise DataError('unknown_epoch', f"No cube epoch '{epoch}'", 404)
         return cube
+
+    @api.get('/api/photometry')
+    def photometry_at(ra: RightAscension, dec: Declination, epoch: Epoch) -> Photometry:
+        observation = api.state.observations.get(epoch)
+        if observation is None:
+            if epoch in api.state.cubes:
+                raise DataError('photometry_unavailable', 'Source photometry requires a single exposure epoch', 409)
+            raise DataError('unknown_epoch', f"No image epoch '{epoch}'", 404)
+        return measure_source(data_dir, observation, ra, dec)
 
     def cube_revision(cube: Cube) -> tuple[int, int]:
         stat = data_path(data_dir, cube).stat()

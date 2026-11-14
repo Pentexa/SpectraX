@@ -10,6 +10,7 @@ EPOCH_A = "dr1-2025-10-01-d1"
 EPOCH_B = "dr1-2026-03-11-d1"
 CUBE = "dr1-coadd"
 QR3_EPOCH = "qr3-2026-08-25-d1"
+PHOTOMETRY_TARGET = {"ra": 269.448214, "dec": 4.695946}
 
 
 def get_json(base_url: str, path: str, **params):
@@ -57,6 +58,12 @@ def verify(base_url: str):
             "Expected aligned DR1 and QR3 images")
     require(cross_release["images"]["result"] is None, "Side-by-side comparison returned an arithmetic result")
 
+    photometry = get_json(base_url, "photometry", **PHOTOMETRY_TARGET, epoch=EPOCH_A)
+    require(photometry["method"] == "forced_epsf" and photometry["epoch"] == EPOCH_A, "Unexpected photometry model")
+    require(math.isclose(photometry["flux_density_ujy"], 1428.9, rel_tol=0.02), "Unexpected DR1 ePSF flux")
+    require(math.isclose(photometry["statistical_error_ujy"], 53.18, rel_tol=0.02), "Unexpected DR1 ePSF flux error")
+    require(photometry["snr"] > 20 and photometry["reduced_chi_square"] < 5, "Unreliable DR1 reference fit")
+
     spectrum = get_json(base_url, "spectrum", **POSITION, epoch=CUBE)
     channels = spectrum["channels"]
     wavelengths = [item["wavelength_um"] for item in channels]
@@ -77,7 +84,8 @@ def verify(base_url: str):
                 f"Unexpected channel for detector {detector}")
         require(any(value is not None for row in layer["image"] for value in row), f"Empty layer for detector {detector}")
     print(f"SPHEREx API verified: {alignment['arithmetic_valid_fraction']:.1%} valid DR1 difference pixels, "
-          f"{len(valid)}/{len(channels)} available channels, {len(groups)} detector layers, aligned QR3 cutout")
+          f"{len(valid)}/{len(channels)} available channels, {len(groups)} detector layers, aligned QR3 cutout, "
+          f"DR1 ePSF flux {photometry['flux_density_ujy']:.1f} uJy")
 
 
 if __name__ == "__main__":
