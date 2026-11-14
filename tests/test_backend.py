@@ -200,17 +200,18 @@ def test_ingest_fallback_and_idempotency(test_data, monkeypatch):
 def test_real_dr1_when_downloaded():
     manifest = load_manifest(MANIFEST)
     root = MANIFEST.parent.parent / 'samples'
-    if not all((root / product.filename).is_file() for product in [*manifest.observations, *manifest.cubes]):
+    observations, cubes = manifest.select_release('DR1')
+    if not all((root / product.filename).is_file() for product in [*observations, *cubes]):
         pytest.skip('Run planet-x-data --include-cubes to exercise public FITS samples')
     with TestClient(create_app(MANIFEST, root)) as client:
-        a, b = manifest.observations
+        a, b = observations
         result = compare(client, a.epoch, b.epoch, fov=0.04)
         assert result.status_code == 200
         assert result.json()['alignment']['arithmetic_valid_fraction'] > 0.8
         assert result.json()['alignment']['registration']['used_sources'] >= 5
         assert result.json()['alignment']['astrometric_offset_verified'] is True
         assert result.json()['measurement']['uncertainty'] > 0
-        target = {'ra': POSITION['ra'], 'dec': POSITION['dec'], 'epoch': manifest.cubes[0].epoch}
+        target = {'ra': POSITION['ra'], 'dec': POSITION['dec'], 'epoch': cubes[0].epoch}
         response = client.get('/api/spectrum', params=target)
         assert response.status_code == 200
         result = response.json()
@@ -229,10 +230,30 @@ def test_real_dr1_when_downloaded():
 def test_barnard_quality_when_downloaded():
     manifest = load_manifest(MANIFEST)
     root = MANIFEST.parent.parent / 'samples'
-    if not all((root / observation.filename).is_file() for observation in manifest.observations):
+    observations, _ = manifest.select_release('DR1')
+    if not all((root / observation.filename).is_file() for observation in observations):
         pytest.skip('Run planet-x-data to exercise public FITS observations')
-    report = benchmark(root, manifest.observations)
+    report = benchmark(root, observations)
     assert report['status'] == 'not_testable'
     assert report['measured_offset_arcsec'] is None
     assert report['predicted_apparent_offset_arcsec']['north'] == pytest.approx(4.59, abs=0.02)
     assert {epoch['status'] for epoch in report['epochs']} <= {'outside_image', 'core_masked'}
+
+
+def test_release_status_and_filter(tmp_path):
+    with TestClient(create_app(MANIFEST, tmp_path)) as client:
+        releases = {item['id']: item for item in client.get('/api/releases').json()['releases']}
+        assert releases['DR1']['status'] == releases['QR3']['status'] == 'published'
+        assert releases['DR2']['status'] == 'planned'
+        assert releases['DR2']['planned_month'] == '2027-12'
+        assert releases['DR3']['status'] == 'unannounced'
+        assert releases['DR3']['planned_month'] is None
+        for release in ('DR2', 'DR3'):
+            assert client.get('/api/datasets', params={'release': release}).json() == {'observations': [], 'cubes': []}
+        qr3 = client.get('/api/datasets', params={'release': 'qr3'}).json()
+        assert [item['release'] for item in qr3['observations']] == ['QR3']
+        assert qr3['cubes'] == []
+        assert qr3['observations'][0]['available_locally'] is False
+        response = client.get('/api/datasets', params={'release': 'DR4'})
+        assert response.status_code == 404
+        assert response.json()['error']['code'] == 'unknown_release'

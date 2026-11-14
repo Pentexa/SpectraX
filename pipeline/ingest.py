@@ -7,7 +7,7 @@ from urllib.request import urlopen
 
 from dotenv import load_dotenv
 
-from pipeline.catalog import ArchiveFile, Observation, Product, load_manifest
+from pipeline.catalog import ArchiveFile, DataError, Observation, Product, load_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -67,9 +67,16 @@ def main():
     parser.add_argument("--data-dir", type=Path, default=configured_path("PLANET_X_DATA_DIR", "data/samples"))
     parser.add_argument("--include-cubes", action="store_true", help="Also fetch the optional spectral cube(s)")
     parser.add_argument("--full-images", action="store_true", help="Prefer full exposures over cutouts when available")
+    parser.add_argument("--release", help="Only fetch products from this release, e.g. DR1 or QR3")
     args = parser.parse_args()
     manifest = load_manifest(args.manifest)
-    products = [*manifest.observations, *(manifest.cubes if args.include_cubes else [])]
+    try:
+        observations, cubes = manifest.select_release(args.release) if args.release else (manifest.observations, manifest.cubes)
+    except DataError as exc:
+        parser.error(str(exc))
+    if args.release and not (observations or cubes):
+        parser.error(f"No FITS products are listed for release '{args.release.upper()}'")
+    products = [*observations, *(cubes if args.include_cubes else [])]
     for product in products:
         try:
             print(f"{product.epoch}: {fetch(product, args.data_dir, full_image=args.full_images)}")

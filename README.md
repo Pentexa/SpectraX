@@ -1,6 +1,6 @@
 # Planet X × SPHEREx Backend
 
-FastAPI service for comparing two public SPHEREx DR1 observations on a common celestial grid and sampling a calibrated DR1 spectral cube. The example covers a small field near Barnard's Star.
+FastAPI service for comparing public SPHEREx observations on a common celestial grid and sampling a calibrated DR1 spectral cube. The manifest includes DR1 and QR3 observations of a small field near Barnard's Star and tracks the publication status of DR2 and DR3.
 
 ## Local setup
 
@@ -20,7 +20,8 @@ The last command starts the server at [localhost:8765](http://127.0.0.1:8765/doc
 | Route | Parameters and result |
 | --- | --- |
 | `GET /api/health` | Service status and local FITS count. |
-| `GET /api/datasets` | Observation IDs, dates, bands, quality policy, and provenance. |
+| `GET /api/releases` | Release status, archive reference, planned month when announced, and counts for the configured manifest. |
+| `GET /api/datasets` | Observation IDs, dates, bands, quality policy, and provenance. Optional `release` filters by ID, case-insensitively. Unpublished releases return empty product lists. |
 | `GET /api/compare` | `ra`, `dec`, `fov`, `epoch_a`, `epoch_b`, and `mode` (`difference`, `side_by_side`, `sum`, or `stack`). Returns aligned A and B, arithmetic result where supported, WCS, validity fractions, flags, and variance-derived values when available. |
 | `GET /api/spectrum` | `ra`, `dec`, and `epoch`. Returns 102 ordered channel slots for a supported cube, with `null` flux for invalid or uncovered channels. |
 | `GET /api/layers` | `epoch`. Returns the six detector groups and their channel ranges. |
@@ -31,7 +32,12 @@ Coordinates use ICRS decimal degrees. `fov` is the square cutout width in degree
 ```powershell
 curl.exe 'http://127.0.0.1:8765/api/compare?ra=269.45&dec=4.7&fov=0.04&epoch_a=dr1-2025-10-01-d1&epoch_b=dr1-2026-03-11-d1&mode=difference'
 curl.exe 'http://127.0.0.1:8765/api/spectrum?ra=269.45&dec=4.7&epoch=dr1-coadd'
+curl.exe 'http://127.0.0.1:8765/api/releases'
+curl.exe 'http://127.0.0.1:8765/api/datasets?release=QR3'
+curl.exe 'http://127.0.0.1:8765/api/compare?ra=269.45&dec=4.7&fov=0.04&epoch_a=dr1-2025-10-01-d1&epoch_b=qr3-2026-08-25-d1&mode=side_by_side'
 ```
+
+Use `planet-x-data --release QR3` to download just the QR3 cutout. The default manifest supports side-by-side viewing of the DR1 and QR3 example cutouts. Their local passbands are too far apart for a difference image under the comparison tolerance.
 
 Difference is `B − A`, and stack is the two-sample mean. Arithmetic requires compatible calibration and units plus at least 10% usable common coverage. Spectral images also require matching local bandpasses. The `alignment.registration` report gives the median sky offset and RMS scatter from at least five shared sources when enough are present. Arithmetic returns `alignment_failed` if those measurements disagree with the WCS. Sparse fields return `insufficient_matches` and retain the WCS-based result with a warning. Difference returns a symmetric display range and a center-pixel measurement. The API surfaces limitations from the local PSF, WCS registration, background, and available variance. The cube provides multi-epoch pixel brightness with per-channel flags and counts. Its format supplies no channel uncertainties.
 
@@ -43,7 +49,7 @@ Run `.\.venv\Scripts\python.exe -m pipeline.benchmark_barnard` to check target c
 
 ## Backend CI/CD
 
-[GitHub Actions](https://github.com/Pentexa/SkyHunter/actions/workflows/backend.yml) runs the Python 3.11 test suite on pull requests targeting `main` and on each push to `main`. After tests pass on `main`, the workflow builds the container, verifies the public DR1 files against the manifest, and mounts them read-only for an HTTP smoke test of the real difference image, spectrum and all six detector layers. Successful runs publish `ghcr.io/pentexa/skyhunter-api:main` and `ghcr.io/pentexa/skyhunter-api:sha-<full-commit-sha>` using GitHub's workflow token. The FITS files are cached by manifest hash and stay outside the published image.
+[GitHub Actions](https://github.com/Pentexa/SkyHunter/actions/workflows/backend.yml) runs the Python 3.11 test suite on pull requests targeting `main` and on each push to `main`. After tests pass on `main`, the workflow builds the container, verifies the public DR1 and QR3 files against the manifest, and mounts them read-only for HTTP tests of the release catalog, real difference image, spectrum, detector layers and QR3 cutout. Successful runs publish `ghcr.io/pentexa/skyhunter-api:main` and `ghcr.io/pentexa/skyhunter-api:sha-<full-commit-sha>` using GitHub's workflow token. The FITS files are cached by manifest hash and stay outside the published image.
 
 Run the published image locally. Authenticate with GHCR first if the package is private.
 

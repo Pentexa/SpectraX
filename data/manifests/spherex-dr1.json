@@ -1,5 +1,32 @@
 {
   "schema_version": 1,
+  "releases": [
+    {
+      "id": "DR1",
+      "name": "SPHEREx Data Release 1",
+      "status": "published",
+      "reference": "https://irsa.ipac.caltech.edu/data/SPHEREx/docs/overview_dr1.html"
+    },
+    {
+      "id": "DR2",
+      "name": "SPHEREx Data Release 2",
+      "status": "planned",
+      "planned_month": "2027-12",
+      "reference": "https://irsa.ipac.caltech.edu/spherex-archive-documentation/spherex-data-releases/"
+    },
+    {
+      "id": "DR3",
+      "name": "SPHEREx Data Release 3",
+      "status": "unannounced",
+      "reference": "https://irsa.ipac.caltech.edu/spherex-archive-documentation/spherex-data-releases/"
+    },
+    {
+      "id": "QR3",
+      "name": "SPHEREx Quick Release 3",
+      "status": "published",
+      "reference": "https://irsa.ipac.caltech.edu/data/SPHEREx/docs/overview_qr.html"
+    }
+  ],
   "observations": [
     {
       "epoch": "dr1-2025-10-01-d1",
@@ -49,6 +76,31 @@
         "access": "https://nasa-irsa-spherex.s3.us-east-1.amazonaws.com/dr1/level2/2026W11_1A/l2b-v27-2026-232/1/level2_2026W11_1A_0556_2D1_spx_l2b-v27-2026-232.fits",
         "size_bytes": 63092160,
         "sha256": "aba9a6b56e15561920401e218c4421b3adbdc26dc1e4674a61cb1e19674780fb"
+      }
+    },
+    {
+      "epoch": "qr3-2026-08-25-d1",
+      "source": "NASA/IPAC IRSA SPHEREx",
+      "release": "QR3",
+      "observation_id": "2026W35_1A_0375_1",
+      "observation_start_mjd": 61277.790218495,
+      "observation_end_mjd": 61277.791550874,
+      "access": "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr3/level2/2026W35_1A/l2b-v27-2026-243/1/level2_2026W35_1A_0375_1D1_spx_l2b-v27-2026-243.fits?center=269.45,4.7&size=0.05",
+      "size_bytes": 3965760,
+      "sha256": "c74c3eba33ea4d11f1cc79c25cd7fcac0c97cef42f36fb329f514b36a51d4f80",
+      "filename": "qr3-2026-08-25-d1.fits",
+      "calibration": "SPHEREx QR3 Level 2B v27",
+      "processing_history": ["SPHEREx Level 2B calibration", "IRSA cutout at ICRS (269.45, 4.7), size 0.05 deg"],
+      "coverage": {"ra": 269.45, "dec": 4.7, "fov": 0.05},
+      "flags": "FLAGS extension. SOURCE (bit 21) is allowed. All other set bits are masked.",
+      "band": "SPHEREx-D1",
+      "detector": 1,
+      "spectral_wcs": "spherex-lvf",
+      "reject_flag_bits": 4292870143,
+      "full_image": {
+        "access": "https://nasa-irsa-spherex.s3.us-east-1.amazonaws.com/qr3/level2/2026W35_1A/l2b-v27-2026-243/1/level2_2026W35_1A_0375_1D1_spx_l2b-v27-2026-243.fits",
+        "size_bytes": 61594560,
+        "sha256": "1df74b2ff7b6cdb5a568e35240ba4bd742d73a70e7c728bc7650943356f5b3f0"
       }
     }
   ],

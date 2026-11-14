@@ -73,10 +73,19 @@ class Cube(Product):
     detector: Literal["D1-D6"] = "D1-D6"
 
 
+class Release(BaseModel):
+    id: str = Field(pattern=r"^[A-Z][A-Z0-9_.-]{0,39}$")
+    name: str
+    status: Literal["published", "planned", "unannounced"]
+    reference: AnyHttpUrl
+    planned_month: str | None = Field(default=None, pattern=r"^[0-9]{4}-(0[1-9]|1[0-2])$")
+
+
 class Manifest(BaseModel):
     schema_version: Literal[1]
     observations: list[Observation]
     cubes: list[Cube] = Field(default_factory=list)
+    releases: list[Release] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def unique_products(self):
@@ -85,7 +94,20 @@ class Manifest(BaseModel):
             raise ValueError("Each epoch ID must be unique")
         if len({item.filename for item in products}) != len(products):
             raise ValueError("Each local FITS filename must be unique")
+        releases = {release.id: release for release in self.releases}
+        if len(releases) != len(self.releases):
+            raise ValueError("Each release ID must be unique")
+        if releases and any(item.release not in releases or releases[item.release].status != "published" for item in products):
+            raise ValueError("FITS products must reference a published release in the manifest")
         return self
+
+    def select_release(self, release_id: str) -> tuple[list[Observation], list[Cube]]:
+        release_id = release_id.upper()
+        observations = [item for item in self.observations if item.release.upper() == release_id]
+        cubes = [item for item in self.cubes if item.release.upper() == release_id]
+        if not (observations or cubes or any(release.id == release_id for release in self.releases)):
+            raise DataError("unknown_release", f"No data release '{release_id}'", 404)
+        return observations, cubes
 
 
 def load_manifest(path: Path) -> Manifest:

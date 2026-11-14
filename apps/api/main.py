@@ -21,6 +21,7 @@ Epoch = Annotated[str, Query(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_
 RightAscension = Annotated[float, Query(ge=0, lt=360, description="ICRS right ascension in degrees")]
 Declination = Annotated[float, Query(ge=-90, le=90, description="ICRS declination in degrees")]
 Fov = Annotated[float, Query(gt=0, le=1, description="Square cutout width in degrees")]
+ReleaseFilter = Annotated[str, Query(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_.-]+$")]
 
 
 def create_app(manifest_path: Path | None = None, data_dir: Path | None = None) -> FastAPI:
@@ -31,6 +32,7 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None) 
     @asynccontextmanager
     async def lifespan(api: FastAPI):
         manifest = load_manifest(manifest_path)
+        api.state.manifest = manifest
         api.state.observations = {record.epoch: record for record in manifest.observations}
         api.state.cubes = {record.epoch: record for record in manifest.cubes}
         yield
@@ -58,10 +60,24 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None) 
         return {'status': 'ok', 'products': len(products),
                 'available_locally': sum((data_dir / product.filename).is_file() for product in products)}
 
+    @api.get('/api/releases')
+    def releases():
+        manifest = api.state.manifest
+        result = []
+        for release in manifest.releases:
+            observations, cubes = manifest.select_release(release.id)
+            result.append(release.model_dump(mode='json') | {
+                'observations': len(observations), 'cubes': len(cubes),
+                'available_locally': sum((data_dir / item.filename).is_file() for item in [*observations, *cubes]),
+            })
+        return {'releases': result}
+
     @api.get('/api/datasets')
-    def datasets():
-        return {'observations': [entry.metadata(data_dir) for entry in api.state.observations.values()],
-                'cubes': [entry.metadata(data_dir) for entry in api.state.cubes.values()]}
+    def datasets(release: ReleaseFilter | None = None):
+        manifest = api.state.manifest
+        observations, cubes = manifest.select_release(release) if release else (manifest.observations, manifest.cubes)
+        return {'observations': [entry.metadata(data_dir) for entry in observations],
+                'cubes': [entry.metadata(data_dir) for entry in cubes]}
 
     @api.get('/api/compare')
     def compare_epochs(ra: RightAscension, dec: Declination, fov: Fov, epoch_a: Epoch, epoch_b: Epoch,
