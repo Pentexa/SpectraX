@@ -3,7 +3,8 @@
 import { useCallback, useState } from "react";
 import { useScienceRequest } from "@/hooks/useScienceRequest";
 import { scienceApi, type SkyField } from "@/lib/api/science";
-import { observationDate, type EpochPair } from "./ArchivePanel";
+import { observationDate } from "./ArchivePanel";
+import type { EpochPair } from "@/lib/api/science";
 import { controlClass, Panel, Status } from "./Panel";
 
 export function SourcePanel({ epochs, targetId, field }: {

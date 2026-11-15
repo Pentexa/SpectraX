@@ -32,6 +32,12 @@ export interface Exposure {
   observation_start_mjd: number;
   release: string;
   detector: number;
+  fits?: {
+    aurora_contamination: boolean | null;
+    helium_airglow_contamination?: boolean | null;
+    shuttle_glow_contamination?: boolean | null;
+    quality_hdus: string[];
+  };
 }
 
 export interface Astrometry {
@@ -60,6 +66,8 @@ export interface Comparison {
   alignment: { overlap_fraction: number; arithmetic_valid_fraction: number | null };
   measurement: { difference: number | null; uncertainty: number | null } | null;
   warnings: string[];
+  flags?: { a: Pixels | null; b: Pixels | null };
+  flag_counts?: { a: Record<string, number> | null; b: Record<string, number> | null };
 }
 
 export interface Benchmark {
@@ -76,12 +84,22 @@ export interface ArchiveObservation {
   predicted_position?: { ra: number; dec: number };
 }
 
+export type ArchiveCutout = Pick<ArchiveObservation, "archive_id" | "predicted_position">;
+export type ArchivePair = readonly [ArchiveCutout, ArchiveCutout];
+export type EpochPair = readonly [string, string];
+
+export function archiveCutoutWidth(fov: number) {
+  return Math.max(0.02, Math.min(fov, 0.2));
+}
+
 export interface SpectrumChannel {
   detector: number;
   channel: number;
   wavelength_um: number;
   flux: number | null;
   masked: boolean;
+  nhits: number;
+  flag_names?: string[];
 }
 
 export interface Spectrum {
@@ -91,12 +109,22 @@ export interface Spectrum {
   channels: SpectrumChannel[];
 }
 
-export interface SpectralImage {
+export type SpectralImage = {
   image: Pixels;
   grid: SkyGrid;
-  wavelength_um: number;
+  flags: Pixels;
   unit: string;
-}
+} & ({
+  aggregation?: undefined;
+  wavelength_um: number;
+} | {
+  aggregation: "nhits_weighted_mean";
+  min_wavelength_um: number;
+  max_wavelength_um: number;
+  channels_combined: number;
+  channel_count: Pixels;
+  nhits: Pixels;
+});
 
 export interface CatalogOverlay {
   catalog: string;
@@ -147,13 +175,18 @@ export const scienceApi = {
       { ...(targetId ? {} : { ra: field.ra, dec: field.dec, radius_deg: field.fov / 2 }),
         release, wavelength_um: wavelength, start_mjd, end_mjd, limit: 40 },
     ), { timeout: 45_000 }),
-  importExposure: (observation: ArchiveObservation, field: SkyField) =>
+  importExposure: (observation: ArchiveCutout, field: SkyField, signal?: AbortSignal) =>
     apiClient.post<Exposure>("/api/archive/import", {
       archive_id: observation.archive_id,
       ra: observation.predicted_position?.ra ?? field.ra,
       dec: observation.predicted_position?.dec ?? field.dec,
-      fov: Math.max(0.02, Math.min(field.fov, 0.2)),
-    }, { timeout: 110_000 }),
+      fov: archiveCutoutWidth(field.fov),
+    }, { signal, timeout: 110_000 }),
+  importPair: async (observations: ArchivePair, field: SkyField, signal?: AbortSignal): Promise<EpochPair> => {
+    const first = await scienceApi.importExposure(observations[0], field, signal);
+    const second = await scienceApi.importExposure(observations[1], field, signal);
+    return [first.epoch, second.epoch];
+  },
   compare: (field: SkyField, epochs: readonly [string, string], mode: ComparisonMode, signal: AbortSignal) =>
     apiClient.get<Comparison>(query("/api/compare", { ...field, epoch_a: epochs[0], epoch_b: epochs[1], mode }), { signal }),
   astrometry: (targetId: string | null, field: SkyField, epochs: readonly [string, string], signal: AbortSignal) =>
@@ -166,8 +199,10 @@ export const scienceApi = {
     }, { signal, timeout: 20_000 }),
   spectrum: (field: SkyField, signal: AbortSignal) =>
     apiClient.get<Spectrum>(query("/api/spectrum", { ra: field.ra, dec: field.dec }), { signal, timeout: 270_000 }),
-  layer: (field: SkyField, channel: SpectrumChannel, epoch: string, signal: AbortSignal) =>
-    apiClient.get<SpectralImage>(query(`/api/layers/${channel.detector}`, { ...field, epoch, channel: channel.channel }),
+  layer: (field: SkyField, detector: number, channel: number | undefined, epoch: string, signal: AbortSignal) =>
+    apiClient.get<SpectralImage>(query(`/api/layers/${detector}`, {
+      ...field, epoch, channel, combine: channel === undefined ? 1 : undefined,
+    }),
       { signal, timeout: 270_000 }),
   overlay: (catalog: "gaia" | "wise", field: SkyField, signal: AbortSignal) =>
     apiClient.get<CatalogOverlay>(query(`/api/catalog/${catalog}`, {

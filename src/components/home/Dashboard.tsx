@@ -6,11 +6,11 @@ import { SiteFooter } from "@/components/layout/SiteFooter";
 import { InfoModal } from "@/components/layout/InfoModal";
 import { createAnimationClock } from "@/hooks/useAnimationClock";
 import { useScienceRequest } from "@/hooks/useScienceRequest";
-import { scienceApi, type ComparisonMode, type SkyField } from "@/lib/api/science";
+import { archiveCutoutWidth, scienceApi, type ArchiveCutout, type ArchivePair, type ComparisonMode, type EpochPair, type SkyField } from "@/lib/api/science";
 import { useDashboardStore } from "@/store/dashboardStore";
 import { StarList } from "./left/StarList";
 import { AllSkyAtlas } from "./center/AllSkyAtlas";
-import { ArchivePanel, type EpochPair } from "./science/ArchivePanel";
+import { ArchivePanel } from "./science/ArchivePanel";
 import { ComparisonPanel } from "./science/ComparisonPanel";
 import { FieldPanel } from "./science/FieldPanel";
 import { controlClass, Panel, Status } from "./science/Panel";
@@ -21,6 +21,16 @@ import { SpectrumPanel } from "./science/SpectrumPanel";
 
 const modes = new Set<ComparisonMode>(["side_by_side", "difference", "sum", "stack"]);
 const isEpoch = (value: string | null): value is string => /^[A-Za-z0-9_.-]{1,80}$/.test(value ?? "");
+const archiveId = /^ivo:\/\/irsa\.ipac\/spherex_(dr1|qr3)\?[A-Za-z0-9_]{1,50}\/D[1-6]$/;
+
+function readCutout(params: URLSearchParams, epoch: "a" | "b"): ArchiveCutout | null {
+  const id = params.get(`archive_${epoch}`);
+  const ra = params.get(`ra_${epoch}`);
+  const dec = params.get(`dec_${epoch}`);
+  if (!id || !archiveId.test(id) || !ra || !dec ||
+    !(Number(ra) >= 0 && Number(ra) < 360 && Math.abs(Number(dec)) <= 90)) return null;
+  return { archive_id: id, predicted_position: { ra: Number(ra), dec: Number(dec) } };
+}
 
 export function Dashboard({ embedded = false }: { embedded?: boolean }) {
   const clock = useMemo(() => createAnimationClock(), []);
@@ -35,7 +45,12 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
   const [coordinates, setCoordinates] = useState<Pick<SkyField, "ra" | "dec"> | null>(null);
   const [fov, setFov] = useState(0.05);
   const [mode, setMode] = useState<ComparisonMode>("side_by_side");
-  const [pair, setPair] = useState<EpochPair | null>(null);
+  const [fixedPair, setFixedPair] = useState<EpochPair | null>(null);
+  const [archivePair, setArchivePair] = useState<{
+    observations: ArchivePair;
+    original?: { fov: number; epochs: EpochPair };
+  } | null>(null);
+  const [importAttempt, setImportAttempt] = useState(0);
   const [showAtlas, setShowAtlas] = useState(false);
   const [showGaia, setShowGaia] = useState(false);
   const [showWise, setShowWise] = useState(false);
@@ -56,7 +71,12 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
     const requestedMode = params.get("mode") as ComparisonMode | null;
     if (requestedMode && modes.has(requestedMode)) setMode(requestedMode);
     const first = params.get("epoch_a"), second = params.get("epoch_b");
-    if (isEpoch(first) && isEpoch(second) && first !== second) setPair([first, second]);
+    const firstCutout = readCutout(params, "a"), secondCutout = readCutout(params, "b");
+    if (firstCutout && secondCutout && firstCutout.archive_id !== secondCutout.archive_id) {
+      setArchivePair({ observations: [firstCutout, secondCutout] });
+    } else if (isEpoch(first) && isEpoch(second) && first !== second) {
+      setFixedPair([first, second]);
+    }
     setShowGaia(params.get("gaia") === "1");
     setShowWise(params.get("wise") === "1");
     setShowAtlas(params.get("view") === "atlas");
@@ -68,15 +88,19 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
   const dec = coordinates?.dec ?? activeTarget?.dec ?? 4.7;
   const field = useMemo(() => ({ ra, dec, fov }), [ra, dec, fov]);
   const targetId = activeTarget?.id ?? null;
-  const clearPair = useCallback(() => { setPair(null); setMode("side_by_side"); }, []);
+  const clearPair = useCallback(() => { setFixedPair(null); setArchivePair(null); setMode("side_by_side"); }, []);
   const handleTarget = useCallback((id: string) => {
     selectTarget(id);
     setCoordinates(null);
     clearPair();
   }, [clearPair, selectTarget]);
 
+  const loadArchive = useCallback((signal: AbortSignal) => scienceApi.importPair(archivePair!.observations, field, signal), [archivePair, field]);
+  const needsImport = archivePair && (!archivePair.original || archiveCutoutWidth(fov) > archivePair.original.fov);
+  const imported = useScienceRequest(source === "api" && needsImport ? loadArchive : null, importAttempt);
+  const pair = archivePair ? needsImport ? imported.data : archivePair.original?.epochs ?? null : fixedPair;
   const loadBenchmark = useCallback((signal: AbortSignal) => scienceApi.benchmark(targetId!, fov, signal), [targetId, fov]);
-  const benchmark = useScienceRequest(activeTarget?.benchmark_available && !pair ? loadBenchmark : null);
+  const benchmark = useScienceRequest(activeTarget?.benchmark_available && !fixedPair && !archivePair ? loadBenchmark : null);
   const epochs = useMemo<EpochPair | null>(() => pair ?? (benchmark.data
     ? [benchmark.data.comparison.epochs.a.epoch, benchmark.data.comparison.epochs.b.epoch] : null), [benchmark.data, pair]);
   const loadComparison = useCallback((signal: AbortSignal) => scienceApi.compare(field, epochs!, mode, signal), [field, epochs, mode]);
@@ -100,9 +124,17 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
     url.searchParams.set("dec", field.dec.toFixed(7));
     url.searchParams.set("fov", String(fov));
     url.searchParams.set("mode", mode);
-    if (pair) {
-      url.searchParams.set("epoch_a", pair[0]);
-      url.searchParams.set("epoch_b", pair[1]);
+    if (archivePair) {
+      (["a", "b"] as const).forEach((key, index) => {
+        const observation = archivePair.observations[index];
+        const position = observation.predicted_position ?? field;
+        url.searchParams.set(`archive_${key}`, observation.archive_id);
+        url.searchParams.set(`ra_${key}`, String(position.ra));
+        url.searchParams.set(`dec_${key}`, String(position.dec));
+      });
+    } else if (fixedPair) {
+      url.searchParams.set("epoch_a", fixedPair[0]);
+      url.searchParams.set("epoch_b", fixedPair[1]);
     }
     if (showGaia) url.searchParams.set("gaia", "1");
     if (showWise) url.searchParams.set("wise", "1");
@@ -144,11 +176,17 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
               openExample={() => {
                 setCoordinates({ ra: 269.45, dec: 4.7 });
                 setFov(0.04);
-                setPair(["dr1-2025-10-01-d1", "dr1-2026-03-11-d1"]);
+                setArchivePair(null);
+                setFixedPair(["dr1-2025-10-01-d1", "dr1-2026-03-11-d1"]);
                 setMode("difference");
                 setShowAtlas(false);
               }}
-              onPair={(value) => { setPair(value); setMode("side_by_side"); setShowAtlas(false); }} />}
+              onPair={(epochs, observations) => {
+                setFixedPair(null);
+                setArchivePair({ observations, original: { fov: archiveCutoutWidth(fov), epochs } });
+                setMode("side_by_side");
+                setShowAtlas(false);
+              }} />}
           </aside>
           <div className="order-first grid min-w-0 gap-2 md:order-none">
             <Panel title={activeTarget?.name ?? "Custom sky field"} actions={
@@ -165,15 +203,21 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
                 <label className="flex items-center gap-1 text-[#ffc982]">
                   <input type="checkbox" checked={showWise} onChange={(event) => setShowWise(event.target.checked)} /> AllWISE
                 </label>
-                {pair && activeTarget?.benchmark_available && <button type="button" className={controlClass} onClick={clearPair}>Restore verified pair</button>}
+                {(fixedPair || archivePair) && activeTarget?.benchmark_available && <button type="button" className={controlClass} onClick={clearPair}>Restore verified pair</button>}
               </div>
               {(gaia.loading || wise.loading) && <Status>Loading catalog overlays…</Status>}
               {(gaia.error || wise.error) && <Status error>{gaia.error ?? wise.error}</Status>}
               {gaia.data && <Status>{gaia.data.sources.length} Gaia reference positions · epoch {gaia.data.reference_epoch_jyear ?? "unknown"}</Status>}
               {wise.data && <Status>{wise.data.sources.length} AllWISE reference positions</Status>}
+              {imported.loading && <Status>Fetching the selected FITS cutouts from IRSA…</Status>}
+              {imported.error && <div className="flex flex-wrap items-center gap-2">
+                <Status error>{imported.error}</Status>
+                <button type="button" className={controlClass} onClick={() => setImportAttempt((value) => value + 1)}>Retry cutouts</button>
+              </div>}
             </Panel>
             {showAtlas ? <AllSkyAtlas clock={clock} onTarget={handleTarget} field={field} catalogMarks={marks} />
-              : <ComparisonPanel key={targetId ?? `${ra}:${dec}`} comparison={displayed} astrometry={measurement} loading={benchmark.loading || comparison.loading}
+              : <ComparisonPanel key={targetId ?? `${ra}:${dec}`} comparison={displayed} astrometry={measurement}
+                  loading={benchmark.loading || comparison.loading || imported.loading}
                   error={comparison.error ?? benchmark.error ?? astrometry.error} mode={mode} onMode={setMode} marks={marks} />}
           </div>
           {!embedded && <aside className="grid min-w-0 gap-2 md:col-span-2 xl:col-span-1">

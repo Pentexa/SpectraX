@@ -2,10 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { errorMessage } from "@/hooks/useScienceRequest";
-import { scienceApi, type ArchiveObservation, type ScienceTarget, type SkyField } from "@/lib/api/science";
+import { scienceApi, type ArchiveObservation, type ArchivePair, type EpochPair, type ScienceTarget, type SkyField } from "@/lib/api/science";
 import { Panel, controlClass, inputClass, Status } from "./Panel";
-
-export type EpochPair = readonly [string, string];
 
 export function observationDate(mjd: number | null) {
   return mjd === null ? "Date unavailable" : new Date((mjd - 40587) * 86_400_000).toISOString().slice(0, 10);
@@ -14,7 +12,7 @@ export function observationDate(mjd: number | null) {
 export function ArchivePanel({ target, field, onPair, openExample }: {
   target: ScienceTarget | null;
   field: SkyField;
-  onPair: (pair: EpochPair) => void;
+  onPair: (pair: EpochPair, observations: ArchivePair) => void;
   openExample: () => void;
 }) {
   const [release, setRelease] = useState("both");
@@ -65,9 +63,9 @@ export function ArchivePanel({ target, field, onPair, openExample }: {
     setError(null);
     setBusy("import");
     try {
-      const first = await scienceApi.importExposure(selected[0], field);
-      const second = await scienceApi.importExposure(selected[1], field);
-      if (revision.current === request) onPair([first.epoch, second.epoch]);
+      const observations = [selected[0], selected[1]] as const;
+      const epochs = await scienceApi.importPair(observations, field);
+      if (revision.current === request) onPair(epochs, observations);
     } catch (err) {
       if (revision.current === request) setError(errorMessage(err));
     } finally {

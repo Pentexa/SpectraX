@@ -6,6 +6,10 @@ import { observationDate } from "./ArchivePanel";
 import { FitsImage, imageRange, type SkyMark } from "./FitsImage";
 import { controlClass, Panel, Status } from "./Panel";
 
+function contamination(value: boolean | null | undefined) {
+  return value == null ? "unreported" : value ? "flagged" : "clear";
+}
+
 export function ComparisonPanel({ comparison, astrometry, loading, error, mode, onMode, marks }: {
   comparison: Comparison | null;
   astrometry: Astrometry | null;
@@ -16,6 +20,9 @@ export function ComparisonPanel({ comparison, astrometry, loading, error, mode, 
   marks: SkyMark[];
 }) {
   const [blink, setBlink] = useState(false);
+  const [showOverlay, setShowOverlay] = useState(false);
+  const [showFlags, setShowFlags] = useState(false);
+  const [opacity, setOpacity] = useState(50);
   const [epoch, setEpoch] = useState<"a" | "b">("a");
   useEffect(() => {
     if (!blink) return;
@@ -30,6 +37,7 @@ export function ComparisonPanel({ comparison, astrometry, loading, error, mode, 
     }] : [];
   };
   const displacement = astrometry?.measured_offset_arcsec;
+  const overlay = showOverlay && comparison?.units.a === comparison?.units.b;
   const range = comparison ? imageRange(comparison.images.a, comparison.images.b) : [0, 1] as const;
   const originalLabel = (key: "a" | "b") => {
     const record = comparison?.epochs[key];
@@ -55,20 +63,49 @@ export function ComparisonPanel({ comparison, astrometry, loading, error, mode, 
             <span className="font-mono text-[10px] text-[#a5b8ca]">
               {(comparison.alignment.overlap_fraction * 100).toFixed(0)}% common coverage · {comparison.units.a}
             </span>
-            <button type="button" aria-pressed={blink} className={controlClass} onClick={() => setBlink((value) => !value)}>
-              {blink ? "Pause blink" : "Blink A/B"}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              {comparison.units.a === comparison.units.b && (
+                <button type="button" aria-pressed={overlay} className={controlClass}
+                  onClick={() => { setBlink(false); setShowOverlay((value) => !value); }}>Overlay A/B</button>
+              )}
+              <button type="button" aria-pressed={blink} className={controlClass}
+                onClick={() => { setShowOverlay(false); setBlink((value) => !value); }}>
+                {blink ? "Pause blink" : "Blink A/B"}
+              </button>
+            </div>
           </div>
-          <div className={blink ? "mx-auto w-full max-w-md" : "grid grid-cols-2 gap-2"}>
-            {(blink ? [epoch] : ["a", "b"] as const).map((key) => (
-              <FitsImage key={key} pixels={comparison.images[key]} grid={comparison.grid}
-                range={range} marks={[...marks, ...cursor(key)]} label={originalLabel(key)} />
-            ))}
-          </div>
+          {(comparison.flags?.a || comparison.flags?.b) && (
+            <label className="flex items-center gap-1 text-[10px] text-[#ec91c6]">
+              <input type="checkbox" checked={showFlags} onChange={(event) => setShowFlags(event.target.checked)} />
+              Highlight flagged pixels
+            </label>
+          )}
+          {overlay ? (
+            <div className="mx-auto grid w-full max-w-md gap-2">
+              <label className="grid gap-1 font-mono text-[10px] text-[#a5b8ca]">
+                Epoch B weight in overlap · {opacity}%
+                <input type="range" min={0} max={100} value={opacity} className="accent-[#6bb9e5]"
+                  onChange={(event) => setOpacity(Number(event.target.value))} />
+              </label>
+              <FitsImage pixels={comparison.images.a} overlay={comparison.images.b} opacity={opacity / 100}
+                grid={comparison.grid} range={range} marks={marks}
+                flags={showFlags ? [opacity < 100 ? comparison.flags?.a : null, opacity > 0 ? comparison.flags?.b : null] : undefined}
+                label={`${originalLabel("a")} / ${originalLabel("b")}`} />
+            </div>
+          ) : (
+            <div className={blink ? "mx-auto w-full max-w-md" : "grid grid-cols-2 gap-2"}>
+              {(blink ? [epoch] : ["a", "b"] as const).map((key) => (
+                <FitsImage key={key} pixels={comparison.images[key]} grid={comparison.grid}
+                  range={range} marks={[...marks, ...cursor(key)]} label={originalLabel(key)}
+                  flags={showFlags ? [comparison.flags?.[key]] : undefined} />
+              ))}
+            </div>
+          )}
           {comparison.images.result && (
             <div className="mx-auto w-full max-w-[280px]">
               <FitsImage pixels={comparison.images.result} grid={comparison.grid} range={imageRange(comparison.images.result)}
                 signed={mode === "difference"} marks={marks}
+                flags={showFlags ? [comparison.flags?.a, comparison.flags?.b] : undefined}
                 label={mode === "difference" ? "B − A · blue decrease / orange increase" : mode === "sum" ? "A + B" : "Mean of A and B"} />
             </div>
           )}
@@ -88,7 +125,21 @@ export function ComparisonPanel({ comparison, astrometry, loading, error, mode, 
           <details className="text-[10px] text-text-muted">
             <summary className="cursor-pointer">Image quality and provenance</summary>
             <ul className="mt-1 list-disc space-y-1 pl-4">
-              <li>{comparison.epochs.a.observation_id} · {comparison.epochs.b.observation_id}</li>
+              {(["a", "b"] as const).map((key) => {
+                const record = comparison.epochs[key];
+                const fits = record.fits;
+                const counts = comparison.flag_counts?.[key];
+                const labels = Object.entries(counts ?? {});
+                return <li key={key}>
+                  {key.toUpperCase()} · {record.observation_id}
+                  {fits && <div>Aurora {contamination(fits.aurora_contamination)} · helium airglow {contamination(fits.helium_airglow_contamination)}
+                    {" · "}shuttle glow {contamination(fits.shuttle_glow_contamination)}</div>}
+                  {fits?.quality_hdus.length ? <div>FITS extensions · {fits.quality_hdus.join(", ")}</div> : null}
+                  <div className="break-words">{labels.length
+                    ? labels.map(([label, count]) => `${label} ${count}`).join(" · ")
+                    : counts ? "No flagged pixels in this field." : "Pixel flag counts unavailable."}</div>
+                </li>;
+              })}
               {comparison.warnings.map((warning) => <li key={warning}>{warning}</li>)}
             </ul>
           </details>

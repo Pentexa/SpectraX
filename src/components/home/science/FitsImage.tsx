@@ -28,13 +28,17 @@ function project(grid: SkyGrid, ra: number, dec: number) {
   return x >= 0 && x <= 1 && y >= 0 && y <= 1 ? { x, y } : null;
 }
 
-export function FitsImage({ pixels, grid, range, marks = [], signed = false, label }: {
+export function FitsImage({ pixels, grid, range, marks = [], signed = false, label,
+  flags, overlay, opacity = 0.5 }: {
   pixels: Pixels;
   grid: SkyGrid;
   range: readonly [number, number];
   marks?: SkyMark[];
   signed?: boolean;
   label: string;
+  flags?: readonly (Pixels | null | undefined)[];
+  overlay?: Pixels;
+  opacity?: number;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [low, high] = range;
@@ -44,20 +48,26 @@ export function FitsImage({ pixels, grid, range, marks = [], signed = false, lab
     const raster = ctx.createImageData(grid.width, grid.height);
     const absolute = Math.max(Math.abs(low), Math.abs(high), 1e-12);
     for (let row = 0; row < grid.height; row++) {
+      const sourceRow = grid.height - row - 1;
       for (let column = 0; column < grid.width; column++) {
-        const value = pixels[grid.height - row - 1]?.[column];
+        const base = pixels[sourceRow]?.[column];
+        const other = overlay?.[sourceRow]?.[column];
+        const value = opacity === 0 ? base : opacity === 1 ? other
+          : base == null ? other : other == null ? base : base * (1 - opacity) + other * opacity;
         const offset = (row * grid.width + column) * 4;
         const intensity = value == null ? 0 : signed ? Math.sqrt(Math.min(1, Math.abs(value) / absolute))
           : Math.asinh(8 * Math.max(0, Math.min(1, (value - low) / (high - low)))) / Math.asinh(8);
         const warm = signed && value != null && value > 0;
-        raster.data[offset] = 8 + intensity * (warm ? 244 : 146);
-        raster.data[offset + 1] = 15 + intensity * (warm ? 128 : 181);
-        raster.data[offset + 2] = 23 + intensity * (warm ? 62 : 226);
+        // The SOURCE bit marks a detected source rather than a pixel defect.
+        const flagged = flags?.some((map) => ((map?.[sourceRow]?.[column] ?? 0) & ~(1 << 21)) !== 0);
+        raster.data[offset] = flagged ? 164 + intensity * 85 : 8 + intensity * (warm ? 244 : 146);
+        raster.data[offset + 1] = flagged ? 49 + intensity * 95 : 15 + intensity * (warm ? 128 : 181);
+        raster.data[offset + 2] = flagged ? 128 + intensity * 115 : 23 + intensity * (warm ? 62 : 226);
         raster.data[offset + 3] = 255;
       }
     }
     ctx.putImageData(raster, 0, 0);
-  }, [grid, pixels, low, high, signed]);
+  }, [grid, pixels, low, high, signed, flags, overlay, opacity]);
 
   return (
     <figure className="min-w-0">
