@@ -24,6 +24,7 @@ ArchiveRelease = Literal["DR1", "QR3"]
 REQUIRED_COLUMNS = {"obs_id", "obs_publisher_did", "obs_collection", "access_url", "energy_bandpassname",
                     "t_min", "t_max", "em_min", "em_max"}
 RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
+ARCHIVE_OUTAGE_CODES = {"archive_unavailable", "archive_timeout"}
 RETRY_DELAYS = (0.25, 0.5)
 MAX_RETRY_AFTER = 5.0
 Result = TypeVar("Result")
@@ -53,6 +54,7 @@ class ArchiveSearch(BaseModel):
 
 def search_prepared(*, release, ra, dec, radius_deg, limit, wavelength_um, start_mjd, end_mjd,
                     local_observations, position_at=None):
+    validate_time_range(start_mjd, end_mjd)
     center = SkyCoord(ra, dec, unit="deg", frame="icrs")
     collection = f"spherex_{release.lower()}"
     results = {}
@@ -193,11 +195,15 @@ def find_image(release: ArchiveRelease, archive_id: str, ra: float, dec: float):
     return table[0]
 
 
+def validate_time_range(start_mjd, end_mjd):
+    if start_mjd is not None and end_mjd is not None and start_mjd > end_mjd:
+        raise DataError("invalid_time_range", "start_mjd must be less than or equal to end_mjd")
+
+
 def search_images(*, release: ArchiveRelease, ra: float, dec: float, radius_deg: float, limit: int,
                   wavelength_um: float | None, start_mjd: float | None, end_mjd: float | None,
                   local_observations: list[tuple[Observation, Path]]) -> ArchiveSearch:
-    if start_mjd is not None and end_mjd is not None and start_mjd > end_mjd:
-        raise DataError("invalid_time_range", "start_mjd must be less than or equal to end_mjd")
+    validate_time_range(start_mjd, end_mjd)
     time_range = None
     if start_mjd is not None or end_mjd is not None:
         lower = start_mjd if start_mjd is not None else "-Inf"

@@ -58,6 +58,8 @@ Archive search uses Astroquery with IRSA SIA2. The radius defaults to 0.01° and
 
 If IRSA times out or returns an upstream availability error, search can return locally prepared or imported FITS covering the requested coordinates. These responses use `scope: "local"` and the frontend labels the limited results. Coordinates outside local coverage still depend on the live archive.
 
+Send `local_only=true` to either observation search endpoint to skip IRSA and query downloaded FITS immediately. During a catalog outage the import endpoint can request a fresh cutout for a known observation with pinned manifest or prior import metadata. FITS identity, detector, times and coverage still undergo validation.
+
 Send the `archive_id` from search together with a cutout center and width between 0.02° and 0.2°. The API resolves the ID at IRSA, downloads a cutout up to 32 MiB, validates the FITS, and returns the observation metadata and an `epoch` for `/api/compare` and `/api/photometry`. A new cutout returns HTTP 201. The same ID, center, and width return HTTP 200 with the stored epoch. Imports appear in `/api/datasets` and survive restarts in `PLANET_X_IMPORT_DIR`, which defaults to `imports` under the local data directory and to `/imports` in the container. Remote failures return `archive_unavailable` (502) or `archive_timeout` (504).
 
 Archive queries and downloads retry temporary IRSA errors and interrupted transfers up to twice. The API honors `Retry-After` delays up to five seconds and returns the upstream failure for longer delays. A download retry starts from byte zero. The API publishes the FITS and its metadata together after validation.

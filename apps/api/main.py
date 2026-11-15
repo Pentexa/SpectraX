@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import Field, FiniteFloat
 
-from pipeline.archive import ArchiveRelease, ArchiveSearch, search_images, search_prepared
+from pipeline.archive import ARCHIVE_OUTAGE_CODES, ArchiveRelease, ArchiveSearch, search_images, search_prepared
 from pipeline.astrometry import AstrometryRequest, astrometry
 from pipeline.benchmarks import BENCHMARK_FIELDS, load_benchmark_observations
 from pipeline.catalog import Cube, DataError, Position, data_path, load_manifest
@@ -115,11 +115,13 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
         return [*((item, data_dir) for item in api.state.manifest.observations),
                 *api.state.benchmark_epochs.values(), *list_imports(import_dir)]
 
-    def search_archive(*, position_at=None, **parameters):
+    def search_archive(*, local_only=False, position_at=None, **parameters):
+        if local_only:
+            return search_prepared(**parameters, position_at=position_at)
         try:
             return search_images(**parameters)
         except DataError as exc:
-            if exc.code not in ('archive_unavailable', 'archive_timeout'):
+            if exc.code not in ARCHIVE_OUTAGE_CODES:
                 raise
             prepared = search_prepared(**parameters, position_at=position_at)
             if not prepared.observations:
@@ -178,11 +180,12 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
         wavelength_um: Annotated[float, Query(gt=0, le=10)] | None = None,
         start_mjd: ArchiveDate | None = None,
         end_mjd: ArchiveDate | None = None,
+        local_only: bool = False,
     ) -> ArchiveSearch:
         return search_archive(
             release=release, ra=ra, dec=dec, radius_deg=radius_deg, limit=limit, wavelength_um=wavelength_um,
             start_mjd=start_mjd, end_mjd=end_mjd,
-            local_observations=local_observations(),
+            local_observations=local_observations(), local_only=local_only,
         )
 
     @api.get('/api/targets')
@@ -208,7 +211,7 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
     def target_observations(target_id: str, release: ArchiveRelease = 'DR1',
                             start_mjd: TargetDate | None = None, end_mjd: TargetDate | None = None,
                             wavelength_um: Annotated[float, Query(gt=0, le=10)] | None = None,
-                            limit: Annotated[int, Query(ge=1, le=100)] = 30):
+                            limit: Annotated[int, Query(ge=1, le=100)] = 30, local_only: bool = False):
         target = get_target(target_id)
         supplied_times = [time for time in (start_mjd, end_mjd) if time is not None]
         center_mjd = sum(supplied_times) / len(supplied_times) if supplied_times else DEFAULT_TARGET_MJD
@@ -217,7 +220,7 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
         archive = search_archive(
             release=release, ra=center.ra.deg, dec=center.dec.deg, radius_deg=0.015, limit=limit,
             wavelength_um=wavelength_um, start_mjd=start_mjd, end_mjd=end_mjd,
-            local_observations=local_records, position_at=target.position,
+            local_observations=local_records, position_at=target.position, local_only=local_only,
         )
         local = defaultdict(list)
         for observation, directory in local_records:
@@ -250,7 +253,7 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
         200: {'description': 'Existing cutout'}, 507: {'description': 'Imported exposure storage quota exceeded'},
     })
     def archive_import(request: ImportRequest, response: Response):
-        observation, directory, created = import_exposure(import_quota, request)
+        observation, directory, created = import_exposure(import_quota, request, known_observations=local_observations)
         response.status_code = 201 if created else 200
         return observation.metadata(directory)
 
