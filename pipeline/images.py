@@ -12,6 +12,20 @@ from astropy.wcs.utils import proj_plane_pixel_scales
 
 from pipeline.catalog import DataError, Observation, data_path
 
+PIXEL_FLAGS = {
+    0: "TRANSIENT", 1: "OVERFLOW", 2: "SUR_ERROR", 6: "NONFUNC", 7: "DICHROIC", 9: "MISSING_DATA",
+    10: "HOT", 11: "COLD", 12: "FULLSAMPLE", 14: "PHANMISS", 15: "NONLINEAR", 17: "PERSIST",
+    19: "OUTLIER", 20: "CROSSTALK", 21: "SOURCE", 22: "GHOST", 23: "GHOST_FPA", 24: "GHOST_EXT",
+    25: "STREAK", 26: "BLOOM", 27: "SNOWBALL", 28: "HALO", 29: "SATELLITE_HALO",
+}
+KNOWN_PIXEL_FLAGS = sum(1 << bit for bit in PIXEL_FLAGS)
+
+
+def pixel_flag_names(flags: int) -> list[str]:
+    names = [name for bit, name in PIXEL_FLAGS.items() if flags & (1 << bit)]
+    return names + [f"UNKNOWN_0x{1 << bit:08x}" for bit in range(32)
+                    if flags & ~KNOWN_PIXEL_FLAGS & (1 << bit)]
+
 
 def numeric_header(header, *keys):
     for key in keys:
@@ -116,6 +130,8 @@ def _read_image(path: Path, modified_ns: int, size: int, spectral_wcs: str, reje
                 "shape": list(signal.shape),
                 "psf_fwhm_arcsec": numeric_header(header, "PSF_FWHM"),
                 "aurora_contamination": header.get("AURORA_CONT"),
+                "helium_airglow_contamination": header.get("HE_AIRGLOW_CONT"),
+                "shuttle_glow_contamination": header.get("SHUTTLE_GLOW_CONT"),
                 "quality_hdus": [name for name in ("FLAGS", "MASK", "VARIANCE", "UNCERTAINTY", "ZODI", "EPSF", "PSF") if name in hdus],
                 "flag_rejection_mask": reject_bits if flags is not None else None,
                 "fits_history": list(header.get("HISTORY", [])),

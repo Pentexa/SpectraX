@@ -77,6 +77,13 @@ def test_coordinate_spectrum_downloads_persists_and_evicts_tiles(tmp_path, monke
         assert response.json() == result and len(calls) == 1
         layer = client.get("/api/layers/1", params={**first_position, "fov": 0.025})
         assert layer.status_code == 200 and len(calls) == 1
+        combined = client.get("/api/layers/4", params={**first_position, "fov": 0.025, "combine": True})
+        assert combined.status_code == 200 and len(calls) == 1
+        mosaic = combined.json()
+        center = mosaic["grid"]["width"] // 2
+        assert mosaic["channel_count"][center][center] == 16
+        assert mosaic["nhits"][center][center] == 16
+        assert mosaic["image"][center][center] == first_tile
         response = client.get("/api/spectrum", params=second_position)
         assert response.status_code == 200, response.text
         assert response.json()["channels"][0]["flux"] == second_tile

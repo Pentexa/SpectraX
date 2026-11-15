@@ -37,7 +37,7 @@ The last command starts the server at [localhost:8765](http://127.0.0.1:8765/doc
 | `POST /api/source-series` | Measure 1–24 image `epochs` at `ra` and `dec` or a catalog `target_id`. Returns detector samples by visit, compatible light curves, and per-exposure errors. |
 | `POST /api/astrometry` | Fit the source centroid in two `epochs` at `ra` and `dec` or at the date-dependent position for `target_id`. Optional `fov` sets the reference-star search width. Returns the relative offset and its covariance when the independent registration passes. |
 | `GET /api/layers` | `epoch`. Returns the six detector groups and their channel ranges. |
-| `GET /api/layers/{detector}` | `ra`, `dec`, `fov`, optional `epoch`, and optional `channel` (1–17, default 9). Returns a cutout of one calibrated channel and its flags within the selected tile. |
+| `GET /api/layers/{detector}` | `ra`, `dec`, `fov`, optional `epoch`, and optional `channel` (1–17, default 9). Set `combine=true` to use all 17 channels from the detector. The composite returns an NHITS-weighted mean, contributing channel and input pixel counts, and the combined flags within the selected tile. |
 
 Coordinates use ICRS decimal degrees. `fov` is the square cutout width in degrees, with a maximum of 1°. Grid width is capped at 255 pixels. Rows follow FITS Y and columns follow FITS X, starting at index 0. Use the returned WCS to place images on the sky. Data errors return an `error` object with a machine-readable `code`. Validation errors also list the affected fields.
 
@@ -82,7 +82,7 @@ Coordinate-only spectrum and layer requests select an ICRS HEALPix tile in the o
 
 Set `PLANET_X_DR1_CUBE_REVISION` to a newer supported IRSA `hips_YYYYMMDD` directory when IRSA republishes the DR1 tiles with the same layout. The new revision uses a separate cache directory. Newly indexed exposures appear in DR1 and QR3 searches directly from IRSA.
 
-For a shareable view, keep `ra`, `dec`, `fov`, catalog/release, and the two upstream `archive_id` values in the frontend URL. If the selected cuts are absent in the current backend instance, import each archive ID using its saved cutout center before drawing the view. The spectrum endpoint works with coordinates alone. Catalog overlays report their native reference frame and Gaia's epoch. Target positions are geocentric catalog predictions and are evaluated at each image's observation midpoint.
+The frontend share and embed links carry `ra`, `dec`, and `fov`. If the user selected an archive pair, the links also carry both upstream IDs and cutout centers so a fresh backend can fetch the pair directly from IRSA. The frontend requests larger cutouts when the field exceeds the imported width. The spectrum endpoint works with coordinates alone. Catalog overlays report their native reference frame and Gaia's epoch. Target positions are geocentric catalog predictions and are evaluated at each image's observation midpoint.
 
 Target searches return a local epoch only when its FITS footprint contains the predicted source position. The source series groups measured detector samples by exposure visit. Light curves use matching detector, calibration, and local wavelength. A change is provided when two compatible samples pass the SNR and residual checks. Weighted means can include signed low-SNR samples and exclude high-residual fits. The [challenge target report](docs/benchmarks/CHALLENGE_TARGETS.md) records the data and quality outcomes from real observations.
 

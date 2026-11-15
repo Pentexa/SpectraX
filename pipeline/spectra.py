@@ -10,6 +10,7 @@ from reproject import reproject_interp
 
 from pipeline.catalog import Cube, DataError, Position, data_path
 from pipeline.compare import nullable_flags, nullable_pixels, output_grid
+from pipeline.images import pixel_flag_names
 
 
 @contextmanager
@@ -57,6 +58,7 @@ def spectrum(data_dir, cube: Cube, ra: float, dec: float) -> dict:
                 "detector": int(row['DETECTOR']), "channel": int(row['SUBCHAN']),
                 "wavelength_um": float(wavelengths[index]), "flux": float(flux[index]) if available else None,
                 "uncertainty": None, "flags": int(quality[index]) & 0xFFFFFFFF,
+                "flag_names": pixel_flag_names(int(quality[index]) & 0xFFFFFFFF),
                 "nhits": int(count[index]), "masked": not available,
             })
     available_count = sum(not point['masked'] for point in points)
@@ -84,20 +86,54 @@ def layers(data_dir, cube: Cube) -> dict:
     return {"epoch": cube.epoch, "unit": unit, "layers": groups, "dataset": cube.metadata(data_dir)}
 
 
-def detector_layer(data_dir, cube: Cube, position: Position, detector: int, channel: int) -> dict:
+def detector_composite(image, hits, flags, indices):
+    shape = image.shape[1:]
+    numerator = np.zeros(shape)
+    total_hits = np.zeros(shape)
+    channel_count = np.zeros(shape, dtype=np.uint8)
+    quality = np.zeros(shape, dtype=np.uint32)
+    for index in indices:
+        values = np.asarray(image.section[int(index)], dtype=float)
+        count = hits.section[int(index)]
+        valid = (count > 0) & np.isfinite(values)
+        numerator[valid] += values[valid] * count[valid]
+        total_hits[valid] += count[valid]
+        channel_count += valid
+        quality[valid] |= np.asarray(flags.section[int(index)], dtype=np.uint32)[valid]
+    covered = total_hits > 0
+    signal = np.divide(numerator, total_hits, out=np.full(shape, np.nan), where=covered)
+    return signal, np.where(covered, quality, np.nan), total_hits, channel_count
+
+
+def detector_layer(data_dir, cube: Cube, position: Position, detector: int, channel: int,
+                   *, combine: bool = False) -> dict:
     with open_cube(data_dir, cube) as (image, hits, flags, table, wavelengths, wcs, unit):
-        index = int(np.flatnonzero((table['DETECTOR'] == detector) & (table['SUBCHAN'] == channel))[0])
-        values = np.asarray(image.section[index], dtype=float)
-        count = hits.section[index]
-        quality = np.asarray(flags.section[index], dtype=np.uint32)
-        values = np.where((count > 0) & np.isfinite(values), values, np.nan)
+        group = table['DETECTOR'] == detector
+        response = {}
+        if combine:
+            planes = detector_composite(image, hits, flags, np.flatnonzero(group))
+            response = {
+                "aggregation": "nhits_weighted_mean",
+                "channels_combined": int(group.sum()),
+                "min_wavelength_um": float(wavelengths[group].min()),
+                "max_wavelength_um": float(wavelengths[group].max()),
+            }
+        else:
+            index = int(np.flatnonzero(group & (table['SUBCHAN'] == channel))[0])
+            values = np.asarray(image.section[index], dtype=float)
+            count = hits.section[index]
+            quality = np.asarray(flags.section[index], dtype=np.uint32)
+            planes = (np.where((count > 0) & np.isfinite(values), values, np.nan), quality)
         grid, shape = output_grid(position, float(max(proj_plane_pixel_scales(wcs))))
-        stack, _ = reproject_interp((np.stack((values, quality)), wcs), grid, shape_out=shape, order='nearest-neighbor')
+        stack, _ = reproject_interp((np.stack(planes), wcs), grid, shape_out=shape, order='nearest-neighbor')
         if not np.isfinite(stack[0]).any():
-            raise DataError("outside_coverage", "The region has no valid pixels in this channel", 404)
-        wavelength = float(wavelengths[index])
+            raise DataError("outside_coverage", "The region has no valid pixels for this spectral layer", 404)
+        if combine:
+            response.update(nhits=nullable_flags(stack[2]), channel_count=nullable_flags(stack[3]))
+        else:
+            response.update(channel=channel, wavelength_um=float(wavelengths[index]))
     return {
-        "epoch": cube.epoch, "detector": detector, "channel": channel, "wavelength_um": wavelength,
+        "epoch": cube.epoch, "detector": detector, **response,
         "unit": unit, "grid": {"width": shape[1], "height": shape[0], "wcs": dict(grid.to_header())},
         "image": nullable_pixels(stack[0]), "flags": nullable_flags(stack[1]), "dataset": cube.metadata(data_dir),
     }

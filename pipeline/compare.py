@@ -7,7 +7,7 @@ from astropy.wcs import NoConvergence, WCS
 from reproject import reproject_interp
 
 from pipeline.catalog import DataError, Observation, Position
-from pipeline.images import Image
+from pipeline.images import Image, PIXEL_FLAGS
 from pipeline.registration import assess_registration
 
 Mode = Literal["side_by_side", "difference", "sum", "stack"]
@@ -172,6 +172,7 @@ def compare(position: Position, mode: Mode, epoch_a: Observation, epoch_b: Obser
                    "uncertainty": nullable_pixels(uncertainty) if uncertainty is not None and np.isfinite(uncertainty).any() else None,
                    "snr": nullable_pixels(snr) if snr is not None and np.isfinite(snr).any() else None},
         "flags": {"a": nullable_flags(flags_a), "b": nullable_flags(flags_b)},
+        "flag_counts": {"a": flag_counts(flags_a), "b": flag_counts(flags_b)},
         "units": {"a": a.unit.to_string(), "b": (a.unit if arithmetic else b.unit).to_string(),
                   "result": a.unit.to_string() if arithmetic else None},
         "display": display,
@@ -187,3 +188,15 @@ def nullable_flags(flags: np.ndarray | None) -> list | None:
     finite = np.isfinite(flags)
     integers = np.where(finite, flags, 0).astype(np.uint32)
     return np.where(finite, integers, None).tolist()
+
+
+def flag_counts(flags: np.ndarray | None) -> dict[str, int] | None:
+    if flags is None:
+        return None
+    integers = flags[np.isfinite(flags)].astype(np.uint32)
+    counts = {}
+    for bit in range(32):
+        count = int(np.count_nonzero(integers & (1 << bit)))
+        if count:
+            counts[PIXEL_FLAGS.get(bit, f"UNKNOWN_0x{1 << bit:08x}")] = count
+    return counts

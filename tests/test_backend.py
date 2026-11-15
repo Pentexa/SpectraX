@@ -242,6 +242,23 @@ def test_real_dr1_when_downloaded():
             layer = client.get(f'/api/layers/{detector}', params={**target, 'fov': 0.025})
             assert layer.status_code == 200
             assert layer.json()['channel'] == 9
+            combined = client.get(f'/api/layers/{detector}', params={**target, 'fov': 0.025, 'combine': True})
+            assert combined.status_code == 200
+            image = combined.json()
+            samples = [row for row in result['channels'] if row['detector'] == detector and not row['masked']]
+            hits = sum(row['nhits'] for row in samples)
+            flags = 0
+            for row in samples:
+                flags |= row['flags']
+            center = image['grid']['width'] // 2
+            assert image['aggregation'] == 'nhits_weighted_mean'
+            assert image['channels_combined'] == 17
+            assert image['channel_count'][center][center] == len(samples)
+            assert image['nhits'][center][center] == hits
+            assert image['flags'][center][center] == flags
+            assert image['image'][center][center] == pytest.approx(
+                sum(row['flux'] * row['nhits'] for row in samples) / hits
+            )
 
 
 def test_barnard_quality_when_downloaded():

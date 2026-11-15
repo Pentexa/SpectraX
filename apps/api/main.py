@@ -353,8 +353,9 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
 
     @lru_cache(maxsize=16)
     def cached_layer(epoch: str, ra: float, dec: float, fov: float, detector: int, channel: int,
-                     revision: tuple[int, int]):
-        return detector_layer(data_dir, api.state.cubes[epoch], Position(ra=ra, dec=dec, fov=fov), detector, channel)
+                     combine: bool, revision: tuple[int, int]):
+        return detector_layer(data_dir, api.state.cubes[epoch], Position(ra=ra, dec=dec, fov=fov),
+                              detector, channel, combine=combine)
 
     @api.get('/api/spectrum')
     def spectrum_at(ra: RightAscension, dec: Declination, epoch: Epoch | None = None):
@@ -370,11 +371,14 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
 
     @api.get('/api/layers/{detector}')
     def layer_at(detector: Annotated[int, RoutePath(ge=1, le=6)], ra: RightAscension, dec: Declination,
-                 fov: Fov, epoch: Epoch | None = None, channel: Annotated[int, Query(ge=1, le=17)] = 9):
+                 fov: Fov, epoch: Epoch | None = None, channel: Annotated[int, Query(ge=1, le=17)] = 9,
+                 combine: bool = False):
+        if combine:
+            channel = 9
         with resolve_cube(epoch, ra, dec) as (directory, cube):
             if directory == data_dir:
-                return cached_layer(cube.epoch, ra, dec, fov, detector, channel, cube_revision(cube))
-            return detector_layer(directory, cube, Position(ra=ra, dec=dec, fov=fov), detector, channel)
+                return cached_layer(cube.epoch, ra, dec, fov, detector, channel, combine, cube_revision(cube))
+            return detector_layer(directory, cube, Position(ra=ra, dec=dec, fov=fov), detector, channel, combine=combine)
 
     return api
 

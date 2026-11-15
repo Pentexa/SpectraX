@@ -10,19 +10,10 @@ from photutils.psf import ImagePSF
 from pydantic import BaseModel, FiniteFloat
 
 from pipeline.catalog import DataError, Observation, data_path
-from pipeline.images import read_image
+from pipeline.images import KNOWN_PIXEL_FLAGS, PIXEL_FLAGS, read_image
 
 FIT_RADIUS = 4
 QualityFlag = Literal["masked_fit_pixels", "low_snr", "high_residual"]
-PIXEL_FLAGS = {
-    0: "TRANSIENT", 1: "OVERFLOW", 2: "SUR_ERROR", 6: "NONFUNC", 7: "DICHROIC", 9: "MISSING_DATA",
-    10: "HOT", 11: "COLD", 12: "FULLSAMPLE", 14: "PHANMISS", 15: "NONLINEAR", 17: "PERSIST",
-    19: "OUTLIER", 20: "CROSSTALK", 21: "SOURCE", 22: "GHOST", 23: "GHOST_FPA", 24: "GHOST_EXT",
-    25: "STREAK", 26: "BLOOM", 27: "SNOWBALL", 28: "HALO", 29: "SATELLITE_HALO",
-}
-KNOWN_PIXEL_FLAGS = sum(1 << bit for bit in PIXEL_FLAGS)
-
-
 class Photometry(BaseModel):
     epoch: str
     release: str

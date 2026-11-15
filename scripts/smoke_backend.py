@@ -120,8 +120,14 @@ def verify(base_url: str):
         require(layer["detector"] == detector and layer["channel"] == group["representative_channel"],
                 f"Unexpected channel for detector {detector}")
         require(any(value is not None for row in layer["image"] for value in row), f"Empty layer for detector {detector}")
+        combined = get_json(base_url, f"layers/{detector}", **POSITION, fov=0.025, epoch=CUBE, combine=1)
+        center = combined["grid"]["width"] // 2
+        require(combined["aggregation"] == "nhits_weighted_mean" and combined["channels_combined"] == 17,
+                f"Unexpected composite for detector {detector}")
+        require(combined["channel_count"][center][center] == sum(p["detector"] == detector for p in valid),
+                f"Incorrect center coverage for detector {detector}")
     print(f"SPHEREx API verified: {alignment['arithmetic_valid_fraction']:.1%} valid DR1 difference pixels, "
-          f"{len(valid)}/{len(channels)} available channels, {len(groups)} detector layers, aligned QR3 cutout, "
+          f"{len(valid)}/{len(channels)} available channels, {len(groups)} detector composites, aligned QR3 cutout, "
           f"DR1 ePSF flux {photometry['flux_density_ujy']:.1f} uJy")
 
 
