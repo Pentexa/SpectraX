@@ -1,6 +1,6 @@
 import os
 from collections import defaultdict
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import ExitStack, asynccontextmanager, contextmanager
 from functools import lru_cache
 from itertools import combinations
 from pathlib import Path
@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field, FiniteFloat
 
 from pipeline.archive import ARCHIVE_OUTAGE_CODES, ArchiveRelease, ArchiveSearch, search_images, search_prepared
+from pipeline.archive_files import ArchiveFiles
 from pipeline.astrometry import AstrometryRequest, astrometry
 from pipeline.benchmarks import BENCHMARK_FIELDS, load_benchmark_observations
 from pipeline.catalog import Cube, DataError, Position, data_path, load_manifest
@@ -64,6 +65,7 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
     benchmark_manifest_dir = configured_path('PLANET_X_BENCHMARK_MANIFEST_DIR', 'data/manifests')
     data_dir = data_dir or configured_path('PLANET_X_DATA_DIR', 'data/samples')
     import_dir = import_dir or Path(os.environ.get('PLANET_X_IMPORT_DIR', data_dir / 'imports'))
+    archive_files = ArchiveFiles(import_dir / 'archive-files')
     import_quota = ImportQuota(import_dir, positive_setting('PLANET_X_IMPORT_QUOTA_BYTES', DEFAULT_IMPORT_QUOTA_BYTES))
     cube_dir = Path(os.environ.get('PLANET_X_CUBE_CACHE_DIR', import_dir / 'cubes'))
     cube_revision_name = os.environ.get('PLANET_X_DR1_CUBE_REVISION', DEFAULT_DR1_REVISION)
@@ -102,8 +104,13 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
     def lookup_observation(epoch: str):
         observation = api.state.observations.get(epoch)
         if observation:
-            return observation, data_dir
-        return api.state.benchmark_epochs.get(epoch) or get_import(import_dir, epoch)
+            prepared = (observation, data_dir)
+        else:
+            prepared = api.state.benchmark_epochs.get(epoch)
+        if prepared:
+            record, directory = prepared
+            return record, archive_files.cached_directory(record) or directory
+        return get_import(import_dir, epoch)
 
     def require_observation(epoch: str):
         located = lookup_observation(epoch)
@@ -114,6 +121,24 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
     def local_observations():
         return [*((item, data_dir) for item in api.state.manifest.observations),
                 *api.state.benchmark_epochs.values(), *list_imports(import_dir)]
+
+    def resolve_epochs(epochs, live):
+        locations = {epoch: require_observation(epoch) for epoch in dict.fromkeys(epochs)}
+        if not live:
+            return locations, {}
+        pinned = []
+        delivery = {}
+        for epoch in locations:
+            if epoch in api.state.observations:
+                pinned.append((api.state.observations[epoch], data_dir))
+            elif epoch in api.state.benchmark_epochs:
+                pinned.append(api.state.benchmark_epochs[epoch])
+            else:
+                delivery[epoch] = 'imported_cutout'
+        for epoch, (location, source) in archive_files.fetch_many(pinned).items():
+            locations[epoch] = location
+            delivery[epoch] = source
+        return locations, delivery
 
     def search_archive(*, local_only=False, position_at=None, **parameters):
         if local_only:
@@ -198,6 +223,8 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
             results.append(target.metadata(mjd) | {
                 'benchmark_available': len(records) >= 2 and all(record.epoch in ready for record in records[:2]),
                 'timeline_epochs': ready if len(ready) >= 3 else [],
+                'benchmark_archive_available': len(records) >= 2,
+                'archive_timeline_epochs': [record.epoch for record in records] if len(records) >= 3 else [],
             })
         return {'targets': results}
 
@@ -267,38 +294,47 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
         return result
 
     @api.get('/api/targets/{target_id}/benchmark')
-    def target_benchmark(target_id: str, fov: Annotated[float, Query(ge=0.01, le=0.2)] = 0.05):
+    def target_benchmark(target_id: str, fov: Annotated[float, Query(ge=0.01, le=0.2)] = 0.05, live: bool = False):
         target = get_target(target_id)
         records = api.state.benchmarks.get(target_id)
         if not records or len(records) < 2:
             raise DataError('benchmark_unavailable', 'No image pair is configured for this target', 404)
         records = records[:2]
-        directory = data_dir / target_id
-        missing = [record.epoch for record in records if not (directory / record.filename).is_file()]
+        locations, delivery = resolve_epochs([record.epoch for record in records], live)
+        missing = [epoch for epoch, (record, directory) in locations.items() if not (directory / record.filename).is_file()]
         if missing:
-            raise DataError('benchmark_not_prepared', 'Run planet-x-data --include-benchmarks', 503,
+            message = 'The archive files are temporarily unavailable' if live else 'Run planet-x-data --include-benchmarks'
+            raise DataError('benchmark_not_prepared', message, 503,
                             details={'epochs': missing})
         first, last = records
         midpoint = (first.observation_start_mjd + first.observation_end_mjd
                     + last.observation_start_mjd + last.observation_end_mjd) / 4
         center = target.position(midpoint)
         position = Position(ra=center.ra.deg, dec=center.dec.deg, fov=fov)
-        locations = {record.epoch: (record, directory) for record in records}
         measurement = astrometry(AstrometryRequest(
             target_id=target_id, epochs=[first.epoch, last.epoch], fov=BENCHMARK_FIELDS[target_id],
         ), locations.__getitem__)
-        images = compare_observations(position, 'side_by_side', (first, directory), (last, directory))
+        images = compare_observations(position, 'side_by_side', locations[first.epoch], locations[last.epoch])
+        if delivery:
+            images['delivery'] = delivery
         return {'target': target.metadata(midpoint), 'comparison': images, 'astrometry': measurement}
 
     @api.get('/api/compare')
     def compare_epochs(ra: RightAscension, dec: Declination, fov: Fov, epoch_a: Epoch, epoch_b: Epoch,
-                       mode: Mode = 'difference'):
-        return compare_observations(Position(ra=ra, dec=dec, fov=fov), mode,
-                                    require_observation(epoch_a), require_observation(epoch_b))
+                       mode: Mode = 'difference', live: bool = False):
+        locations, delivery = resolve_epochs([epoch_a, epoch_b], live)
+        result = compare_observations(Position(ra=ra, dec=dec, fov=fov), mode, locations[epoch_a], locations[epoch_b])
+        if delivery:
+            result['delivery'] = delivery
+        return result
 
     @api.post('/api/timeline')
-    def timeline(request: TimelineRequest):
-        return build_timeline(request, require_observation)
+    def timeline(request: TimelineRequest, live: bool = False):
+        locations, delivery = resolve_epochs(request.epochs, live)
+        result = build_timeline(request, locations.__getitem__)
+        if delivery:
+            result['delivery'] = delivery
+        return result
 
     @api.post('/api/compare/auto')
     def compare_automatically(request: AutoCompareRequest):
@@ -334,15 +370,19 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
         return cube
 
     @contextmanager
-    def resolve_cube(epoch: str | None, ra: float, dec: float):
+    def resolve_cube(epoch: str | None, ra: float, dec: float, *, live: bool = False):
+        prepared = None
         if epoch is None:
             tile = tile_at(ra, dec)
             for cube in api.state.cubes.values():
                 if (cube.release == 'DR1' and cube.observation_id == f'Npix{tile}_cube'
                         and f'/{cube_revision_name}/' in str(cube.access)
                         and (data_dir / cube.filename).is_file()):
-                    yield data_dir, cube
-                    return
+                    prepared = (data_dir, cube)
+                    break
+            if prepared is not None and not live:
+                yield prepared
+                return
         elif epoch in api.state.cubes:
             yield data_dir, get_cube(epoch)
             return
@@ -351,7 +391,13 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
             if tile is None:
                 yield data_dir, get_cube(epoch)
                 return
-        with cube_cache.open(tile) as resolved:
+        with ExitStack() as stack:
+            try:
+                resolved = stack.enter_context(cube_cache.open(tile))
+            except DataError:
+                if prepared is None:
+                    raise
+                resolved = prepared
             yield resolved
 
     @api.get('/api/photometry')
@@ -384,11 +430,15 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
                               detector, channel, combine=combine)
 
     @api.get('/api/spectrum')
-    def spectrum_at(ra: RightAscension, dec: Declination, epoch: Epoch | None = None):
-        with resolve_cube(epoch, ra, dec) as (directory, cube):
+    def spectrum_at(ra: RightAscension, dec: Declination, epoch: Epoch | None = None, live: bool = False):
+        with resolve_cube(epoch, ra, dec, live=live) as (directory, cube):
             if directory == data_dir:
-                return cached_spectrum(cube.epoch, ra, dec, cube_revision(cube))
-            return spectrum(directory, cube, ra, dec)
+                result = cached_spectrum(cube.epoch, ra, dec, cube_revision(cube))
+            else:
+                result = spectrum(directory, cube, ra, dec)
+            if live and epoch is None:
+                return result | {'delivery': 'downloaded_fallback' if directory == data_dir else 'archive_cube'}
+            return result
 
     @api.get('/api/layers')
     def list_layers(epoch: Epoch):
