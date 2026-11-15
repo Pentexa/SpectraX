@@ -147,6 +147,32 @@ export interface SourceSeries {
     error: { message: string; details?: { core_flags: string[] } } | null;
   }[];
   light_curves: { wavelength_um: number; change: { flux_change_ujy: number; statistical_error_ujy: number } | null }[];
+  aperture_change?: {
+    wavelength_a_um: number;
+    wavelength_b_um: number;
+    elapsed_days: number;
+    fractional_systematic_per_epoch: number;
+    measurement: {
+      a: { flux_ujy: number };
+      b: { flux_ujy: number };
+      change_ujy: number;
+      uncertainty_ujy: number;
+      snr: number;
+    };
+  } | null;
+  wing_change?: {
+    wavelength_a_um: number;
+    wavelength_b_um: number;
+    elapsed_days: number;
+    rings: {
+      inner_arcsec: number;
+      outer_arcsec: number;
+      common_pixels: number;
+      a_mjy_sr: number;
+      b_mjy_sr: number;
+      change_mjy_sr: number;
+    }[];
+  } | null;
 }
 
 export interface Release {
