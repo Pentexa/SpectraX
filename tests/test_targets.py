@@ -40,6 +40,15 @@ def test_benchmark_reports_missing_files_for_each_challenge_target(tmp_path):
         assert client.get("/api/targets/wise-0855/benchmark", params={"fov": 1}).status_code == 422
 
 
+def test_existing_benchmark_manifest_directory_can_load_a_subset(tmp_path, monkeypatch):
+    filename = "spherex-wise-0855.json"
+    (tmp_path / filename).write_bytes((MANIFEST.parent / filename).read_bytes())
+    monkeypatch.setenv("PLANET_X_BENCHMARK_MANIFEST_DIR", str(tmp_path))
+    with TestClient(create_app(MANIFEST, tmp_path)) as client:
+        assert client.get("/api/targets/wise-0855/benchmark").status_code == 503
+        assert client.get("/api/targets/barnard/benchmark").status_code == 404
+
+
 def test_target_search_checks_the_local_fits_footprint(tmp_path, monkeypatch):
     observation = load_manifest(MANIFEST).observations[0]
     (tmp_path / observation.filename).touch()

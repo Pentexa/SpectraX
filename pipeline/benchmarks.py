@@ -12,7 +12,9 @@ BENCHMARK_FIELDS = {
 
 
 def load_benchmark_observations(manifests_dir: Path) -> dict[str, list[Observation]]:
-    return {
-        target_id: load_manifest(manifests_dir / f"spherex-{target_id}.json").observations
-        for target_id in BENCHMARK_FIELDS
-    }
+    observations = {}
+    for target_id in BENCHMARK_FIELDS:
+        manifest = manifests_dir / f"spherex-{target_id}.json"
+        if manifest.is_file():
+            observations[target_id] = load_manifest(manifest).observations
+    return observations
