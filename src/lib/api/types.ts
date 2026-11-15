@@ -57,6 +57,7 @@ export type DiffMode = "diff" | "movers" | "anomalies";
 
 export interface ApiError {
   status?: number;
+  code?: string;
   message: string;
   cause?: unknown;
 }

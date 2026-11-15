@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { errorMessage } from "@/hooks/useScienceRequest";
 import { MAX_TIMELINE_EPOCHS, scienceApi, type ArchiveCutout, type ArchiveObservation, type ScienceTarget, type SkyField } from "@/lib/api/science";
+import type { ApiError } from "@/lib/api/types";
 import { Panel, controlClass, inputClass, Status } from "./Panel";
 
 export function observationDate(mjd: number | null) {
@@ -20,38 +21,48 @@ export function ArchivePanel({ target, field, onSelection, openExample }: {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [records, setRecords] = useState<(ArchiveObservation & ArchiveCutout)[] | null>(null);
-  const [localOnly, setLocalOnly] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [chosen, setChosen] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"search" | "import" | null>(null);
+  const [busy, setBusy] = useState<"search" | "local" | "import" | null>(null);
   const revision = useRef(0);
   useEffect(() => () => { revision.current += 1; }, []);
 
-  async function search() {
+  async function search(localOnly = false) {
     const request = ++revision.current;
     setError(null);
     setChosen([]);
     setRecords(null);
-    setLocalOnly(false);
-    setBusy("search");
+    setNotice(null);
+    setBusy(localOnly ? "local" : "search");
     try {
       const start = startDate ? Date.parse(startDate) / 86_400_000 + 40587 : undefined;
       const end = endDate ? Date.parse(endDate) / 86_400_000 + 40588 : undefined;
       const releases = release === "both" ? ["DR1", "QR3"] : [release];
       const results = await Promise.allSettled(releases.map((item) => scienceApi.observations(
-        target?.id ?? null, field, item, wavelength ? Number(wavelength) : undefined, start, end,
+        target?.id ?? null, field, item, wavelength ? Number(wavelength) : undefined, start, end, localOnly,
       )));
       if (revision.current !== request) return;
       const available = results.filter((result) => result.status === "fulfilled");
       const usesLocal = (value: typeof available[number]["value"]) => (value.archive?.scope ?? value.scope) === "local";
-      setLocalOnly(available.some((result) => usesLocal(result.value)));
+      const outages = releases.filter((_, index) => {
+        const result = results[index];
+        const code = result.status === "rejected" ? (result.reason as ApiError | null)?.code : undefined;
+        return code === "archive_unavailable" || code === "archive_timeout";
+      });
+      const hasLocalResults = available.some((result) => usesLocal(result.value));
+      if (localOnly) setNotice("Showing downloaded SPHEREx FITS only.");
+      else if (hasLocalResults) setNotice("IRSA live search is unavailable. Local FITS are included.");
+      else if (outages.length) setNotice(
+        `IRSA live search is unavailable for ${outages.join(" and ")}. Try again later or search downloaded FITS.`,
+      );
       setRecords(available.length
         ? available.flatMap((result) => result.value.observations.map((record) => ({
             ...record, local_epoch: usesLocal(result.value) ? record.epoch ?? undefined : undefined,
           })))
             .sort((a, b) => (a.observation_start_mjd ?? 0) - (b.observation_start_mjd ?? 0))
         : null);
-      const unavailable = results.flatMap((result, index) => result.status === "rejected"
+      const unavailable = results.flatMap((result, index) => result.status === "rejected" && !outages.includes(releases[index])
         ? [`${releases[index]} · ${errorMessage(result.reason)}`] : []);
       if (unavailable.length) setError(unavailable.join(" / "));
     } catch (err) {
@@ -103,12 +114,15 @@ export function ArchivePanel({ target, field, onSelection, openExample }: {
         </div>
         <div className="flex flex-wrap gap-2">
           <button className={controlClass} disabled={busy !== null}>{busy === "search" ? "Searching IRSA…" : "Find observations"}</button>
+          <button type="button" className={controlClass} disabled={busy !== null} onClick={() => void search(true)}>
+            {busy === "local" ? "Searching downloaded FITS…" : "Search downloaded FITS"}
+          </button>
           <button type="button" className={controlClass} onClick={openExample}>Open DR1 difference</button>
         </div>
       </form>
+      {notice && <div className="mt-2"><Status>{notice}</Status></div>}
       {records && (
         <div className="mt-2 grid gap-2">
-          {localOnly && <Status>IRSA is unavailable for part of this search. Local FITS are included.</Status>}
           {records.length === 0 ? <Status>No exposures for this search.</Status> : (
             <>
               <fieldset className="max-h-48 overflow-y-auto border border-border-subtle px-2 pb-1">

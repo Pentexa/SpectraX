@@ -213,11 +213,11 @@ export const scienceApi = {
   benchmark: (targetId: string, fov: number, signal: AbortSignal) =>
     apiClient.get<Benchmark>(query(`/api/targets/${encodeURIComponent(targetId)}/benchmark`, { fov }), { signal }),
   observations: (targetId: string | null, field: SkyField, release: string, wavelength?: number,
-    start_mjd?: number, end_mjd?: number) =>
+    start_mjd?: number, end_mjd?: number, localOnly = false) =>
     apiClient.get<{ observations: ArchiveObservation[]; scope?: "live" | "local"; archive?: { scope?: "live" | "local" } }>(query(
       targetId ? `/api/targets/${encodeURIComponent(targetId)}/observations` : "/api/archive/search",
       { ...(targetId ? {} : { ra: field.ra, dec: field.dec, radius_deg: field.fov / 2 }),
-        release, wavelength_um: wavelength, start_mjd, end_mjd, limit: 40 },
+        release, wavelength_um: wavelength, start_mjd, end_mjd, limit: 40, local_only: localOnly ? 1 : undefined },
     ), { timeout: 45_000 }),
   importExposure: (observation: ArchiveCutout, field: SkyField, signal?: AbortSignal) =>
     apiClient.post<Exposure>("/api/archive/import", {

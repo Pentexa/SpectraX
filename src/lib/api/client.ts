@@ -46,9 +46,10 @@ async function request<T>(path: string, init?: RequestInit, options: RequestOpti
   }
 
   if (!response.ok) {
-    const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
+    const payload = await response.json().catch(() => null) as { error?: { code?: string; message?: string } } | null;
     throw {
       status: response.status,
+      code: payload?.error?.code,
       message: payload?.error?.message ?? `Backend returned error: ${response.status} ${response.statusText}`,
     } satisfies ApiError;
   }
