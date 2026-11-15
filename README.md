@@ -72,7 +72,7 @@ Run `.\.venv\Scripts\python.exe -m pytest -q`. The archive tests run Uvicorn and
 
 Run `python -m pytest -q tests/test_archive_e2e.py -k quota` to check shared storage. The tests cover 32 mixed requests against two workers near capacity and reclaiming space after a worker is killed mid-download.
 
-Run `.\.venv\Scripts\python.exe -m pipeline.benchmark_barnard` to check target coverage and quality at the expected coordinates of Barnard's Star. See the [benchmark report](docs/benchmarks/BARNARDS_STAR.md) for results and full-exposure commands.
+Run `.\.venv\Scripts\python.exe -m pipeline.benchmark_barnard` to check target coverage and quality in the local samples. Add `--archive` to inspect a sample of distinct DR1 and QR3 visits from the live IRSA catalog. See the [Barnard benchmark](docs/benchmarks/BARNARDS_STAR.md) for results and commands.
 
 ## Backend CI/CD
 
