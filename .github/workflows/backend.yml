@@ -53,7 +53,8 @@ jobs:
         uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
           path: data/samples
-          key: spherex-${{ hashFiles('data/manifests/spherex-dr1.json') }}
+          key: spherex-v2-${{ hashFiles('data/manifests/spherex-*.json') }}
+          restore-keys: spherex-${{ hashFiles('data/manifests/spherex-dr1.json') }}
       - name: Build container
         run: |
           docker build --pull \
@@ -74,8 +75,12 @@ jobs:
           for attempt in 1 2 3; do
             if docker run --rm --user "$(id -u):$(id -g)" \
               --mount "type=bind,src=$PWD/data/samples,dst=/data" \
-              "$IMAGE:sha-$GITHUB_SHA" planet-x-data --include-cubes; then
-              chmod a+r data/samples/*.fits
+              "$IMAGE:sha-$GITHUB_SHA" planet-x-data --include-cubes &&
+              docker run --rm --user "$(id -u):$(id -g)" \
+                --mount "type=bind,src=$PWD/data/samples,dst=/data" \
+                "$IMAGE:sha-$GITHUB_SHA" planet-x-data --manifest /app/data/manifests/spherex-wise-0855.json \
+                --data-dir /data/wise-0855; then
+              chmod -R a+rX data/samples
               exit 0
             fi
             if [[ "$attempt" -lt 3 ]]; then sleep 5; fi
@@ -108,6 +113,16 @@ jobs:
             smoke_args+=(--live-archive)
           fi
           python3 -u scripts/smoke_backend.py "${smoke_args[@]}"
+      - name: Verify real WISE 0855 astrometry
+        shell: bash
+        run: |
+          container=$(docker run --detach --publish 127.0.0.1:8765:8765 \
+            --mount "type=bind,src=$PWD/data/samples/wise-0855,dst=/data,readonly" \
+            -e PLANET_X_MANIFEST=/app/data/manifests/spherex-wise-0855.json "$IMAGE:sha-$GITHUB_SHA")
+          trap 'docker logs "$container"; docker rm -f "$container" >/dev/null' EXIT
+          curl --fail --silent --show-error --max-time 2 --retry 20 --retry-all-errors --retry-delay 1 \
+            --output /dev/null http://127.0.0.1:8765/api/ready
+          python3 -u scripts/smoke_backend.py --wise-0855
       - name: Verify deployment health and request limits
         shell: bash
         run: |

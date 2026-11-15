@@ -182,8 +182,8 @@ def verify_wise_0855(base_url: str):
     require(result["status"] == "measured" and result["registration"]["used_sources"] >= 5,
             "WISE 0855 relative registration failed")
     offset = result["measured_offset_arcsec"]
-    require(math.isclose(offset["east"], -5.125, abs_tol=0.05)
-            and math.isclose(offset["north"], 1.710, abs_tol=0.05) and offset["significance"] > 4,
+    require(math.isclose(offset["east"], -5.125, abs_tol=0.25)
+            and math.isclose(offset["north"], 1.710, abs_tol=0.15) and offset["significance"] > 4,
             "Unexpected WISE 0855 displacement in the verified DR1 exposures")
     print(f"WISE 0855 displacement verified: {offset['east']:.2f} arcsec east, {offset['north']:.2f} arcsec north")
 

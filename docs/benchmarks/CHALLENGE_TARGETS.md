@@ -5,7 +5,7 @@
 | Hedef | Örnek gerçek gözlemler | Sonuç |
 | --- | --- | --- |
 | Barnard Yıldızı | DR1 ve QR3, 13 D6 kesiti | Yıldız her kesitte kapsandı. En iyi kesitte 4/9 çekirdek pikseli geçerliydi. Özdevinim değeri boş. |
-| Epsilon Indi B | DR1 `2025W41_2B_0200_1/D4`, `2026W17_1B_0337_3/D4` | 3,497 ve 3,300 µm'de sırasıyla yaklaşık 13.792 ± 112 ve 10.872 ± 102 µJy. İki uyum da yüksek artık verdi. Ölçümler farklı dalga boylarında ve bileşenleri birlikte içeriyor. |
+| Epsilon Indi B | DR1 `2025W40_1A_0444_3/D6`, `2026W18_1A_0502_1/D6` | Birleşik kaynağın 210,43 günde 3,98″ doğu ve 1,38″ güney yönünde göreli kayması ölçüldü. Beş ortak referans kaynağı hizalamayı doğruladı. |
 | WISE 0855−0714 | DR1 `2025W46_1A_0238_1/D6`, `2026W17_1B_0227_4/D6` | 161,22 günde 5,13″ batı ve 1,71″ kuzey yönünde göreli kayma ölçüldü. Altı ortak referans kaynağı hizalamayı doğruladı. |
 | RW Aurigae | DR1 `2025W36_1A_0095_1/D1`, `2026W10_1A_0445_1/D1`, `2026W11_1A_0285_4/D1` | İlk tek kaynak uyumu yüksek artık verdi. Sonraki gözlemlerde çekirdek maskesi veya eksik varyans ölçümü engelledi. Güvenilir akı farkı döndürülmedi. |
 | R Draconis | DR1 `2025W23_2B_0130_1/D6`, `2026W01_1A_0534_3/D6` | Her iki FITS okundu. Kalite bayrakları veya eksik varyans kaynak uyumuna engel oldu. |
@@ -19,6 +19,8 @@ Sonuçları tekrar üretmek için `GET /api/targets/{target_id}/observations` il
 ## WISE 0855 hareket testi
 
 15 Kasım 2026. 0,20° FITS kesitleri ve 0,18° hizalama alanı kullanıldı. Ölçümde eksen başına belirsizlik yaklaşık 1,23″ ve 1,29″. İki boyutlu Mahalanobis uzaklığı 4,51. Aynı ilk gözlem, farklı bir ikinci ziyaret olan `2026W17_1B_0507_3/D6` ile karşılaştırıldığında sekiz referans kaynağıyla 5,30″ batı ve 1,52″ kuzey yönünde kayma ölçüldü. İlk ve ikinci gözlemlerin yerel dalga boyları farklı olduğundan bu sonuç astrometriyi doğrular. Parlaklık değişimi bu gözlemlerden hesaplanmadı.
+
+Kesit servisi erişilemezse indirme aracı IRSA’nın AWS aynasındaki tam FITS dosyalarını kullanır. İki tam görüntüde ek bir ortak referans bulundu. Bu görüntülerden ölçülen kayma 5,34″ batı ve 1,62″ kuzey yönünde. [IRSA arşiv erişimi](https://irsa.ipac.caltech.edu/spherex-archive-documentation/spherex-data-access/)
 
 SHA-256 değerleri sabitlenmiş iki FITS dosyasıyla testi yeniden çalıştır.
 
@@ -35,3 +37,12 @@ API çalışırken ayrı bir terminalden `python scripts/smoke_backend.py --wise
 | --- | ---: | ---: | ---: |
 | `ivo://irsa.ipac/spherex_dr1?2025W46_1A_0238_1/D6` | 133.76019838679107° | −7.242244305443577° | 0.20° |
 | `ivo://irsa.ipac/spherex_dr1?2026W17_1B_0227_4/D6` | 133.7589615748621° | −7.2421046267988975° | 0.20° |
+
+## Epsilon Indi B hareket testi
+
+15 Kasım 2026. `target_id=epsilon-indi-b` ve 0,20° hizalama alanıyla eksen başına yaklaşık 1,10″ belirsizlik hesaplandı. İki boyutlu Mahalanobis uzaklığı 3,81. Konum uyumu birleşik kaynağın ışık merkezini verir. Doğrulanan DR1 D6 kesitleri ve SHA-256 değerleri aşağıda.
+
+| Arşiv kaydı | RA | Dec | SHA-256 |
+| --- | ---: | ---: | --- |
+| `ivo://irsa.ipac/spherex_dr1?2025W40_1A_0444_3/D6` | 331.0960799055985° | −56.800529751506424° | `f0282210706193bf9e4e0c2b902d1ed846bd2d52d4ad2424652030996de18583` |
+| `ivo://irsa.ipac/spherex_dr1?2026W18_1A_0502_1/D6` | 331.09744651228624° | −56.800835052161254° | `464ce879ef80db459bab4a94ee246bb7c57de0a9f470e597f3813e4bd78c770f` |
