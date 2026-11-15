@@ -102,12 +102,43 @@ jobs:
             --output "$RUNNER_TEMP/backend-openapi.json"
           jq -e '.paths | has("/api/compare") and has("/api/spectrum") and has("/api/releases") and has("/api/archive/import")' \
             "$RUNNER_TEMP/backend-openapi.json"
-          smoke_args=()
+          smoke_args=(--wide-sky)
           if [[ "$GITHUB_REF_TYPE" == tag ]]; then
             jq -e --arg version "${GITHUB_REF_NAME#v}" '.info.version == $version' "$RUNNER_TEMP/backend-openapi.json"
             smoke_args+=(--live-archive)
           fi
           python3 -u scripts/smoke_backend.py "${smoke_args[@]}"
+      - name: Verify deployment health and request limits
+        shell: bash
+        run: |
+          export SPECTRAX_IMAGE="$IMAGE:sha-$GITHUB_SHA"
+          compose=(docker compose -p spectrax-ci -f deploy/compose.yaml)
+          trap '"${compose[@]}" logs; "${compose[@]}" down -v' EXIT
+          "${compose[@]}" config --quiet
+          "${compose[@]}" create prepare-data
+          seed=$("${compose[@]}" ps --all --quiet prepare-data)
+          docker cp data/samples/. "$seed:/data/"
+          "${compose[@]}" up --detach --wait --wait-timeout 90
+          curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8080/api/ready \
+            | jq -e '.status == "ready" and .products == 4'
+          python3 - <<'PY'
+          from concurrent.futures import ThreadPoolExecutor
+          from urllib.error import HTTPError
+          from urllib.request import urlopen
+
+          def status(_):
+              try:
+                  with urlopen("http://127.0.0.1:8080/api/spectrum", timeout=5) as response:
+                      return response.status
+              except HTTPError as error:
+                  return error.code
+
+          with ThreadPoolExecutor(12) as pool:
+              codes = set(pool.map(status, range(48)))
+          assert codes == {422, 429}, codes
+          with urlopen("http://127.0.0.1:8080/api/ready", timeout=5) as response:
+              assert response.status == 200
+          PY
       - name: Push image to GitHub Container Registry
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}

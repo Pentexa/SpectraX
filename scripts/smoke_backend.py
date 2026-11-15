@@ -13,6 +13,11 @@ CUBE = "dr1-coadd"
 QR3_EPOCH = "qr3-2026-08-25-d1"
 PHOTOMETRY_TARGET = {"ra": 269.448214, "dec": 4.695946}
 MANIFEST = Path(__file__).resolve().parents[1] / "data/manifests/spherex-dr1.json"
+WIDE_SKY_POSITION = {"ra": 60.8109955, "dec": 51.3404038}
+WIDE_SKY_SHA256 = "f098a04d2fed64a051eaf56444c2f18fad84bd9bd1e15b1f964337a9a4139f31"
+CYGNUS_POSITION = {"ra": 305.59875, "dec": 41.14888889}
+CYGNUS_ARCHIVE_ID = "ivo://irsa.ipac/spherex_dr1?2025W18_1B_0023_2/D1"
+CYGNUS_SHA256 = "16b3cb39f2b5b90f6567d4e29a18c2d292820dd8a86fb3cdc80a2d0d82012247"
 
 
 def request_json(request: Request, timeout: int) -> tuple[int, dict]:
@@ -32,6 +37,15 @@ def get_json(base_url: str, path: str, *, timeout: int = 20, **params):
 def require(condition: bool, message: str):
     if not condition:
         raise RuntimeError(message)
+
+
+def import_irsa_exposure(base_url: str, archive_id: str, **coverage):
+    request = Request(base_url + "/api/archive/import",
+                      data=json.dumps(dict(coverage, archive_id=archive_id)).encode(),
+                      headers={"Content-Type": "application/json"}, method="POST")
+    status, imported = request_json(request, timeout=110)
+    require(status == 201 and imported["available_locally"], f"Expected a fresh import of {archive_id}")
+    return imported
 
 
 def verify(base_url: str):
@@ -110,11 +124,7 @@ def verify_live_archive(base_url: str):
         )
         require(any(item["archive_id"] == archive_id for item in results["observations"]),
                 f"Live IRSA catalog did not return {archive_id}")
-        request = Request(base_url + "/api/archive/import",
-                          data=json.dumps(dict(coverage, archive_id=archive_id)).encode(),
-                          headers={"Content-Type": "application/json"}, method="POST")
-        status, imported = request_json(request, timeout=110)
-        require(status == 201 and imported["available_locally"], f"Expected a fresh import of {archive_id}")
+        imported = import_irsa_exposure(base_url, archive_id, **coverage)
         require(imported["sha256"] == observation["sha256"] and imported["size_bytes"] == observation["size_bytes"],
                 f"Live IRSA FITS differs from the verified manifest for {archive_id}")
         if release == "DR1":
@@ -124,12 +134,40 @@ def verify_live_archive(base_url: str):
         print(f"Live IRSA verified {release} {observation_id}, {imported['size_bytes']} bytes, SHA-256 matched")
 
 
+def verify_wide_sky(base_url: str):
+    local = get_json(base_url, "spectrum", **POSITION)
+    require(local["epoch"] == CUBE, "Coordinate lookup did not reuse the manifest cube")
+    remote = get_json(base_url, "spectrum", timeout=260, **WIDE_SKY_POSITION)
+    require(remote["epoch"] == "dr1-npix445" and remote["dataset"]["sha256"] == WIDE_SKY_SHA256,
+            "Wrong IRSA cube for the second sky field")
+    require(remote["available_channels"] == 100 and len(remote["channels"]) == 102,
+            "Unexpected channel counts in the second sky field")
+    for result, brightness in ((local, 0.06335347), (remote, 3.54918933)):
+        channel = min(result["channels"], key=lambda item: abs(item["wavelength_um"] - 4.6))
+        require(math.isclose(channel["flux"], brightness, abs_tol=1e-6), "Unexpected 4.6 um surface brightness")
+        require(channel["uncertainty"] is None and channel["nhits"] > 0, "Unexpected channel quality metadata")
+    layer = get_json(base_url, "layers/6", **WIDE_SKY_POSITION, fov=0.025, epoch=remote["epoch"])
+    require(any(pixel is not None for row in layer["image"] for pixel in row), "Empty layer in the second sky field")
+    print("Two real DR1 fields verified, including the archived tile selected by coordinate")
+
+    imported = import_irsa_exposure(base_url, CYGNUS_ARCHIVE_ID, **CYGNUS_POSITION, fov=0.05)
+    require(imported["sha256"] == CYGNUS_SHA256, "Cygnus FITS differs from the reference")
+    fit = get_json(base_url, "photometry", **CYGNUS_POSITION, epoch=imported["epoch"])
+    require("low_snr" in fit["quality_flags"] and abs(fit["snr"]) < 1, "Cygnus fit must be flagged as low SNR")
+    require(math.isclose(fit["flux_density_ujy"], 19.37, abs_tol=1), "Unexpected Cygnus ePSF flux")
+    require(math.isclose(fit["statistical_error_ujy"], 42.57, abs_tol=1), "Unexpected Cygnus statistical uncertainty")
+    print(f"Cygnus low-SNR reference verified, {fit['flux_density_ujy']:.2f} ± {fit['statistical_error_ujy']:.2f} uJy")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Verify the API against the manifest's real SPHEREx DR1 and QR3 samples")
     parser.add_argument("--base-url", default="http://127.0.0.1:8765")
     parser.add_argument("--live-archive", action="store_true", help="Also search IRSA and download into a fresh import directory")
+    parser.add_argument("--wide-sky", action="store_true", help="Verify a second DR1 tile from the IRSA cloud archive")
     args = parser.parse_args()
     base_url = args.base_url.rstrip("/")
     verify(base_url)
     if args.live_archive:
         verify_live_archive(base_url)
+    if args.wide_sky:
+        verify_wide_sky(base_url)

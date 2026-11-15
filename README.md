@@ -20,15 +20,16 @@ The last command starts the server at [localhost:8765](http://127.0.0.1:8765/doc
 | Route | Parameters and result |
 | --- | --- |
 | `GET /api/health` | Service status and local FITS count. |
+| `GET /api/ready` | Returns 200 once all manifest samples are present, or 503 with the missing epochs. |
 | `GET /api/releases` | Release status, archive reference, planned month when announced, and counts for manifest and imported products. |
 | `GET /api/datasets` | Observation IDs, dates, bands, quality policy, and provenance. Optional `release` filters by ID, case-insensitively. Unpublished releases return empty product lists. |
 | `GET /api/archive/search` | Find IRSA spectral images in the DR1 or QR3 wide survey. Accepts `ra`, `dec`, `release`, `radius_deg`, `limit`, `wavelength_um`, `start_mjd`, and `end_mjd`. |
 | `POST /api/archive/import` | Download and register a calibrated DR1 or QR3 exposure cutout. The JSON body contains `archive_id`, `ra`, `dec`, and `fov`. |
 | `GET /api/compare` | `ra`, `dec`, `fov`, `epoch_a`, `epoch_b`, and `mode` (`difference`, `side_by_side`, `sum`, or `stack`). Returns aligned A and B, arithmetic result where supported, WCS, validity fractions, flags, and variance-derived values when available. |
-| `GET /api/spectrum` | `ra`, `dec`, and `epoch`. Returns 102 ordered channel slots for a supported cube, with `null` flux for invalid or uncovered channels. |
+| `GET /api/spectrum` | `ra`, `dec`, and optional `epoch`. Omitting `epoch` locates the DR1 tile at the coordinate. Returns 102 ordered channel slots, with `null` flux for invalid or uncovered channels. |
 | `GET /api/photometry` | `ra`, `dec`, and one image `epoch`. Fits a point source at the supplied position and returns flux density and statistical error in µJy, observation and bandpass metadata, and quality flags. |
 | `GET /api/layers` | `epoch`. Returns the six detector groups and their channel ranges. |
-| `GET /api/layers/{detector}` | `ra`, `dec`, `fov`, `epoch`, and optional `channel` (1–17, default 9). Returns a cutout of one calibrated channel and its flags. |
+| `GET /api/layers/{detector}` | `ra`, `dec`, `fov`, optional `epoch`, and optional `channel` (1–17, default 9). Returns a cutout of one calibrated channel and its flags within the selected tile. |
 
 Coordinates use ICRS decimal degrees. `fov` is the square cutout width in degrees, with a maximum of 1°. Grid width is capped at 255 pixels. Rows follow FITS Y and columns follow FITS X, starting at index 0. Use the returned WCS to place images on the sky. Data errors return an `error` object with a machine-readable `code`. Validation errors also list the affected fields.
 
@@ -63,6 +64,8 @@ Difference is `B − A`, and stack is the two-sample mean. Arithmetic requires c
 
 Photometry uses the local FITS ePSF through Photutils and fits its amplitude and a constant background on the native exposure pixels. It estimates pixel solid angle from the local WCS. Wavelength and bandwidth come from the FITS wavelength lookup. The error includes statistical variance. Crowding, pointing error, and calibration systematics can affect the estimate. `quality_flags` includes `low_snr` below SNR 5, `high_residual` above reduced χ² 5, and `masked_fit_pixels` when pixels were excluded. Signed flux estimates at low SNR are available for statistical analysis. `photometry_unavailable` (HTTP 409) covers missing calibration, clipped fit windows and masked source cores. [IRSA ePSF format](https://caltech-ipac.github.io/irsa-tutorials/spherex-psf/) · [IRSA photometry method](https://irsa.ipac.caltech.edu/onlinehelp/spherex/spherex/sp.html)
 
+Coordinate-only spectrum and layer requests select an ICRS HEALPix tile in the official DR1 archive. The first request for a tile can download about 321 MB. It verifies the tile identifier and FITS structure and records the SHA-256 of the received file. Later calls can use the returned epoch or the coordinate. `PLANET_X_CUBE_CACHE_DIR` defaults to `cubes` under the import directory. `PLANET_X_CUBE_CACHE_BYTES` defaults to 2 GiB, with older idle tiles evicted as needed. An uncached request can receive `cube_busy` (503) while another tile is downloading. [IRSA FITS cube tutorial](https://caltech-ipac.github.io/irsa-tutorials/spherex-hipscube/)
+
 ## Tests and data
 
 Run `.\.venv\Scripts\python.exe -m pytest -q`. The archive tests run Uvicorn and a local HTTP archive server to test discovery, import, comparison, photometry, a process restart, duplicate requests, and rejected FITS files. They use generated FITS by default. To use verified DR1 FITS, set `$env:PLANET_X_E2E_SAMPLES = (Resolve-Path data/samples).Path` before running `python -m pytest -q tests/test_archive_e2e.py`. Additional real-data tests cover comparison, spectrum, and all six detector layers when the FITS files are present. See the [data inventory and citations](docs/DATA_SOURCES.md) and the [versioned manifest](data/manifests/spherex-dr1.json) for exact files. Switch `PLANET_X_MANIFEST` to load a new release with the same schema and supported FITS layouts, then run `planet-x-data` before restarting the API.
@@ -80,15 +83,22 @@ A release tag such as `v0.1.0` must match the package and API versions. The rele
 Run the published image locally. Authenticate with GHCR first if the package is private.
 
 ```powershell
-docker run --rm -p 127.0.0.1:8765:8765 ghcr.io/pentexa/spectrax-api:v0.1.0
+docker run --rm -p 127.0.0.1:8765:8765 ghcr.io/pentexa/spectrax-api:main
 ```
 
 For FITS-backed endpoints, download the samples using the local setup above and mount them read-only. Mount a writable volume at `/imports` to keep imported cutouts across container replacement.
 
 ```powershell
 $Samples = (Resolve-Path 'data/samples').Path
-docker run --rm -p 127.0.0.1:8765:8765 --mount "type=bind,source=$Samples,target=/data,readonly" --mount "type=volume,source=spherex-imports,target=/imports" ghcr.io/pentexa/spectrax-api:v0.1.0
+docker run --rm -p 127.0.0.1:8765:8765 --mount "type=bind,source=$Samples,target=/data,readonly" --mount "type=volume,source=spherex-imports,target=/imports" ghcr.io/pentexa/spectrax-api:main
 ```
 
 With the sample data mounted, run `python scripts/smoke_backend.py` from another terminal to repeat the release smoke test.
 Add `--live-archive` and use a fresh import directory to repeat the live IRSA check.
+Add `--wide-sky` to verify an additional IRSA tile outside the manifest region.
+
+## Server deployment
+
+On a Docker host, run `docker compose -f deploy/compose.yaml up -d --wait`. Set `SPECTRAX_IMAGE` to the desired image tag or digest. Compose prepares the verified sample files, mounts them read-only in the API, and keeps imported FITS and cached cubes in a writable volume. The gateway on `127.0.0.1:8080` applies a request limit and returns HTTP 429 when the limit is exceeded. Set `PLANET_X_CORS_ORIGINS` to the frontend origin when it is known.
+
+Point the host's HTTPS reverse proxy at the gateway and use `/api/ready` for uptime checks. The gateway keeps a shared rate limit for archive and cube routes. `docker compose -f deploy/compose.yaml logs api gateway` shows request and service logs. Keep the `samples` and `imports` volumes across upgrades.

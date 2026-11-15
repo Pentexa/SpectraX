@@ -168,6 +168,9 @@ def test_epoch_errors(client, epoch, status, code):
 
 def test_health_validation_and_no_cube(client):
     assert client.get('/api/health').json() == {'status': 'ok', 'products': 6, 'available_locally': 5}
+    readiness = client.get('/api/ready')
+    assert readiness.status_code == 503
+    assert readiness.json()['error']['details']['epochs'] == ['missing']
     assert len(client.get('/api/datasets').json()['observations']) == 6
     assert compare(client, fov=9).json()['error']['code'] == 'invalid_request'
     assert compare(client, ra='NaN').json()['error']['code'] == 'invalid_request'

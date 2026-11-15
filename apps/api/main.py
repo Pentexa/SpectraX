@@ -1,5 +1,5 @@
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from pipeline.archive import ArchiveRelease, ArchiveSearch, search_images
 from pipeline.catalog import Cube, DataError, Position, data_path, load_manifest
 from pipeline.compare import Mode, compare
+from pipeline.cube_archive import DEFAULT_CACHE_BYTES, CubeCache, tile_at, tile_from_epoch
 from pipeline.exposures import ImportRequest, get_import, import_exposure, list_imports
 from pipeline.images import read_image
 from pipeline.import_storage import DEFAULT_IMPORT_QUOTA_BYTES, ImportQuota
@@ -29,19 +30,25 @@ ReleaseFilter = Annotated[str, Query(min_length=1, max_length=40, pattern=r"^[A-
 ArchiveDate = Annotated[float, Query(ge=0, le=100_000, description="UTC Modified Julian Date")]
 
 
+def positive_setting(name: str, default: int) -> int:
+    try:
+        value = int(os.environ.get(name, default))
+        if value <= 0:
+            raise ValueError
+    except ValueError as exc:
+        raise ValueError(f'{name} must be a positive integer') from exc
+    return value
+
+
 def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
                import_dir: Path | None = None) -> FastAPI:
     load_dotenv(ROOT / '.env')
     manifest_path = manifest_path or configured_path('PLANET_X_MANIFEST', 'data/manifests/spherex-dr1.json')
     data_dir = data_dir or configured_path('PLANET_X_DATA_DIR', 'data/samples')
     import_dir = import_dir or Path(os.environ.get('PLANET_X_IMPORT_DIR', data_dir / 'imports'))
-    try:
-        quota_bytes = int(os.environ.get('PLANET_X_IMPORT_QUOTA_BYTES', DEFAULT_IMPORT_QUOTA_BYTES))
-        if quota_bytes <= 0:
-            raise ValueError
-    except ValueError as exc:
-        raise ValueError('PLANET_X_IMPORT_QUOTA_BYTES must be a positive integer') from exc
-    import_quota = ImportQuota(import_dir, quota_bytes)
+    import_quota = ImportQuota(import_dir, positive_setting('PLANET_X_IMPORT_QUOTA_BYTES', DEFAULT_IMPORT_QUOTA_BYTES))
+    cube_dir = Path(os.environ.get('PLANET_X_CUBE_CACHE_DIR', import_dir / 'cubes'))
+    cube_cache = CubeCache(cube_dir, positive_setting('PLANET_X_CUBE_CACHE_BYTES', DEFAULT_CACHE_BYTES))
 
     @asynccontextmanager
     async def lifespan(api: FastAPI):
@@ -84,6 +91,15 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
         products.extend(list_imports(import_dir))
         return {'status': 'ok', 'products': len(products),
                 'available_locally': sum((directory / item.filename).is_file() for item, directory in products)}
+
+    @api.get('/api/ready')
+    def ready():
+        manifest = api.state.manifest
+        products = [*manifest.observations, *manifest.cubes]
+        missing = [item.epoch for item in products if not (data_dir / item.filename).is_file()]
+        if missing:
+            raise DataError('data_unavailable', 'Manifest data has not been prepared', 503, details={'epochs': missing})
+        return {'status': 'ready', 'products': len(products)}
 
     @api.get('/api/releases')
     def releases():
@@ -156,6 +172,26 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
             raise DataError('unknown_epoch', f"No cube epoch '{epoch}'", 404)
         return cube
 
+    @contextmanager
+    def resolve_cube(epoch: str | None, ra: float, dec: float):
+        if epoch is None:
+            tile = tile_at(ra, dec)
+            for cube in api.state.cubes.values():
+                if (cube.release == 'DR1' and cube.observation_id == f'Npix{tile}_cube'
+                        and (data_dir / cube.filename).is_file()):
+                    yield data_dir, cube
+                    return
+        elif epoch in api.state.cubes:
+            yield data_dir, get_cube(epoch)
+            return
+        else:
+            tile = tile_from_epoch(epoch)
+            if tile is None:
+                yield data_dir, get_cube(epoch)
+                return
+        with cube_cache.open(tile) as resolved:
+            yield resolved
+
     @api.get('/api/photometry')
     def photometry_at(ra: RightAscension, dec: Declination, epoch: Epoch) -> Photometry:
         if epoch in api.state.cubes:
@@ -177,19 +213,24 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
         return detector_layer(data_dir, api.state.cubes[epoch], Position(ra=ra, dec=dec, fov=fov), detector, channel)
 
     @api.get('/api/spectrum')
-    def spectrum_at(ra: RightAscension, dec: Declination, epoch: Epoch):
-        cube = get_cube(epoch)
-        return cached_spectrum(epoch, ra, dec, cube_revision(cube))
+    def spectrum_at(ra: RightAscension, dec: Declination, epoch: Epoch | None = None):
+        with resolve_cube(epoch, ra, dec) as (directory, cube):
+            if directory == data_dir:
+                return cached_spectrum(cube.epoch, ra, dec, cube_revision(cube))
+            return spectrum(directory, cube, ra, dec)
 
     @api.get('/api/layers')
     def list_layers(epoch: Epoch):
-        return layers(data_dir, get_cube(epoch))
+        with resolve_cube(epoch, 0, 0) as (directory, cube):
+            return layers(directory, cube)
 
     @api.get('/api/layers/{detector}')
     def layer_at(detector: Annotated[int, RoutePath(ge=1, le=6)], ra: RightAscension, dec: Declination,
-                 fov: Fov, epoch: Epoch, channel: Annotated[int, Query(ge=1, le=17)] = 9):
-        cube = get_cube(epoch)
-        return cached_layer(epoch, ra, dec, fov, detector, channel, cube_revision(cube))
+                 fov: Fov, epoch: Epoch | None = None, channel: Annotated[int, Query(ge=1, le=17)] = 9):
+        with resolve_cube(epoch, ra, dec) as (directory, cube):
+            if directory == data_dir:
+                return cached_layer(cube.epoch, ra, dec, fov, detector, channel, cube_revision(cube))
+            return detector_layer(directory, cube, Position(ra=ra, dec=dec, fov=fov), detector, channel)
 
     return api
 

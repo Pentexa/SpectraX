@@ -1,0 +1,41 @@
+services:
+  prepare-data:
+    image: ${SPECTRAX_IMAGE:-ghcr.io/pentexa/spectrax-api:main}
+    command: ["planet-x-data", "--include-cubes"]
+    volumes:
+      - samples:/data
+
+  api:
+    image: ${SPECTRAX_IMAGE:-ghcr.io/pentexa/spectrax-api:main}
+    depends_on:
+      prepare-data:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    environment:
+      PLANET_X_CORS_ORIGINS: ${PLANET_X_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      PLANET_X_IMPORT_QUOTA_BYTES: ${PLANET_X_IMPORT_QUOTA_BYTES:-1073741824}
+      PLANET_X_CUBE_CACHE_BYTES: ${PLANET_X_CUBE_CACHE_BYTES:-2147483648}
+    volumes:
+      - samples:/data:ro
+      - imports:/imports
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8765/api/ready', timeout=3).close()"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 4
+
+  gateway:
+    image: nginx:1.28-alpine
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${SPECTRAX_PORT:-8080}:8080"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  samples:
+  imports:
