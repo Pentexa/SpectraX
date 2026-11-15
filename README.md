@@ -19,7 +19,7 @@
   <sub>SPHEREx first all-sky panorama · NASA/JPL-Caltech</sub>
 </p>
 
-Built for **Planet X and SPHEREx**, a [2026 NASA Space Apps Challenge](https://www.spaceappschallenge.org/2026/).
+Built for **Planet X and SPHEREx**, a [2026 NASA Space Apps Challenge](https://www.spaceappschallenge.org/2026/). Read the [development journey](DEVELOPMENT_JOURNEY.md).
 
 ## Explore
 
