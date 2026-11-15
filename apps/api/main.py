@@ -1,4 +1,5 @@
 import os
+from collections import defaultdict
 from contextlib import asynccontextmanager, contextmanager
 from functools import lru_cache
 from itertools import combinations
@@ -25,7 +26,7 @@ from pipeline.ingest import ROOT, configured_path
 from pipeline.photometry import Photometry, measure_source
 from pipeline.source_series import EpochId, SourceSeriesRequest, source_series
 from pipeline.spectra import detector_layer, layers, spectrum
-from pipeline.targets import DEFAULT_TARGET_MJD, TARGETS, get_target
+from pipeline.targets import DEFAULT_TARGET_MJD, TARGETS, covered_target_epoch, get_target
 
 Epoch = Annotated[str, Query(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_.-]+$")]
 RightAscension = Annotated[float, Query(ge=0, lt=360, description="ICRS right ascension in degrees")]
@@ -180,8 +181,13 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
         archive = search_images(
             release=release, ra=center.ra.deg, dec=center.dec.deg, radius_deg=0.015, limit=limit,
             wavelength_um=wavelength_um, start_mjd=start_mjd, end_mjd=end_mjd,
-            local_observations=[*((item, data_dir) for item in api.state.manifest.observations), *list_imports(import_dir)],
+            local_observations=[],
         )
+        local = defaultdict(list)
+        for observation, directory in [*((item, data_dir) for item in api.state.manifest.observations),
+                                       *list_imports(import_dir)]:
+            if observation.release == release and (directory / observation.filename).is_file():
+                local[observation.observation_id, observation.band].append((observation, directory))
         observations = []
         for item in sorted(archive.observations, key=lambda item: item.observation_start_mjd or float('inf')):
             record = item.model_dump(mode='json')
@@ -189,6 +195,8 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
                 mjd = (item.observation_start_mjd + item.observation_end_mjd) / 2
                 position = target.position(mjd)
                 record['predicted_position'] = {'ra': position.ra.deg, 'dec': position.dec.deg, 'mjd': mjd}
+                record['epoch'] = covered_target_epoch(position, local.get((item.observation_id, item.band), []))
+                record['available_locally'] = record['epoch'] is not None
             else:
                 record['predicted_position'] = None
             observations.append(record)

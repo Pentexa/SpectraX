@@ -12,4 +12,6 @@
 
 Epsilon Indi Ba ve Bb’nin yayımlanmış açısal ayrımı yaklaşık 0,73″. SPHEREx tayfsal görüntülerinin yaklaşık 6″ piksel ölçeğinde bu örneğin iki ayrı bileşen olarak yorumlanması desteklenmiyor. [Epsilon Indi gözlemi](https://arxiv.org/abs/astro-ph/0309256) · [SPHEREx veri ürünü](https://irsa.ipac.caltech.edu/spherex-archive-documentation/spherex-data-products/)
 
+RW Aurigae için 1,31 µm arşiv filtresiyle iki DR1 zaman penceresinde on D2 ziyaretini daha denedik. İndirilebilen dört kesit kaynak uyumu için gereken piksel kalite koşullarını karşılamadı. Diğer altı kesit için arşiv isteği tamamlanamadı.
+
 Sonuçları tekrar üretmek için `GET /api/targets/{target_id}/observations` ile kayıtları ve tahmini konumları al. Her arşiv kimliği için `POST /api/archive/import` çağrısında ilgili gözlemin tahmini konumunu ve `fov: 0.05` değerini kullan. Dönen epoch değerlerini ve `target_id` alanını `POST /api/source-series` çağrısına gönder. `predicted_catalog_offset_arcsec` katalog tahminidir. `light_curves[].change` yalnızca uyumlu ve yeterli kalitedeki akı ölçümleri için hesaplanır. [Barnard piksel denetimi](BARNARDS_STAR.md)

@@ -75,7 +75,7 @@ Set `PLANET_X_DR1_CUBE_REVISION` to a newer supported IRSA `hips_YYYYMMDD` direc
 
 For a shareable view, keep `ra`, `dec`, `fov`, catalog/release, and the two upstream `archive_id` values in the frontend URL. If the selected cuts are absent in the current backend instance, import each archive ID using its saved cutout center before drawing the view. The spectrum endpoint works with coordinates alone. Catalog overlays report their native reference frame and Gaia's epoch. Target positions are geocentric catalog predictions and are evaluated at each image's observation midpoint.
 
-The source series groups measured detector samples by exposure visit. Light curves use matching detector, calibration, and local wavelength. A change is provided when two compatible samples pass the SNR and residual checks. Weighted means can include signed low-SNR samples and exclude high-residual fits. The [challenge target report](docs/benchmarks/CHALLENGE_TARGETS.md) records the data and quality outcomes from real observations.
+Target searches return a local epoch only when its FITS footprint contains the predicted source position. The source series groups measured detector samples by exposure visit. Light curves use matching detector, calibration, and local wavelength. A change is provided when two compatible samples pass the SNR and residual checks. Weighted means can include signed low-SNR samples and exclude high-residual fits. The [challenge target report](docs/benchmarks/CHALLENGE_TARGETS.md) records the data and quality outcomes from real observations.
 
 ## Tests and data
 

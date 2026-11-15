@@ -1,10 +1,14 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from requests import Response
 
+from apps.api import main
 from apps.api.main import create_app
-from pipeline import catalog_overlays
+from pipeline import catalog_overlays, targets
+from pipeline.archive import ArchiveObservation, ArchiveSearch
+from pipeline.catalog import load_manifest
 
 MANIFEST = Path(__file__).resolve().parents[1] / "data/manifests/spherex-dr1.json"
 
@@ -21,6 +25,33 @@ def test_challenge_targets_have_epoch_positions_and_catalog_references(tmp_path)
     assert all(item["source"].startswith("https://simbad.") for item in later.values())
     assert 7 < (earlier["wise-0855"]["ra"] - later["wise-0855"]["ra"]) * 3600 < 10
     assert 9 < (later["barnard"]["dec"] - earlier["barnard"]["dec"]) * 3600 < 12
+
+
+def test_target_search_checks_the_local_fits_footprint(tmp_path, monkeypatch):
+    observation = load_manifest(MANIFEST).observations[0]
+    (tmp_path / observation.filename).touch()
+    archive = ArchiveSearch(
+        release="DR1", collection="spherex_dr1", has_more=False,
+        observations=[ArchiveObservation(
+            archive_id="ivo://irsa.ipac/spherex_dr1?2025W40_1A_0471_1/D1",
+            observation_id=observation.observation_id, band=observation.band, fits_url=str(observation.access),
+            observation_start_mjd=observation.observation_start_mjd, observation_end_mjd=observation.observation_end_mjd,
+            wavelength_min_um=0.75, wavelength_max_um=1.09, epoch=None, available_locally=False,
+        )],
+    )
+    monkeypatch.setattr(main, "search_images", lambda **kwargs: archive)
+    image = SimpleNamespace(wcs=SimpleNamespace(world_to_pixel=lambda position: (20, 70)),
+                            signal=SimpleNamespace(shape=(50, 50)))
+    monkeypatch.setattr(targets, "read_image", lambda directory, observation: image)
+
+    with TestClient(create_app(MANIFEST, tmp_path)) as client:
+        url = "/api/targets/barnard/observations"
+        outside = client.get(url).json()["observations"][0]
+        assert outside["predicted_position"]["dec"] > 4.76
+        assert outside["epoch"] is None and not outside["available_locally"]
+        monkeypatch.setattr(image.wcs, "world_to_pixel", lambda position: (20, 30))
+        inside = client.get(url).json()["observations"][0]
+        assert inside["epoch"] == observation.epoch and inside["available_locally"]
 
 
 def test_gaia_overlay_preserves_large_ids_and_missing_values(tmp_path, monkeypatch):

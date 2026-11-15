@@ -1,12 +1,15 @@
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlencode
 
 from astropy import units as u
 from astropy.coordinates import SkyCoord, get_body_barycentric
 from astropy.time import Time
+from astropy.wcs import NoConvergence
 from pydantic import BaseModel
 
-from pipeline.catalog import DataError
+from pipeline.catalog import DataError, Observation
+from pipeline.images import read_image
 
 REFERENCE_EPOCH = Time(2000, format="jyear", scale="tt")
 DEFAULT_TARGET_MJD = 61100.0
@@ -75,3 +78,16 @@ def get_target(target_id: str) -> Target:
     if target is None:
         raise DataError("unknown_target", f"No benchmark target '{target_id}'", 404)
     return target
+
+
+def covered_target_epoch(position: SkyCoord, candidates: list[tuple[Observation, Path]]) -> str | None:
+    for observation, directory in candidates:
+        try:
+            image = read_image(directory, observation)
+            x, y = image.wcs.world_to_pixel(position)
+        except (DataError, NoConvergence):
+            continue
+        height, width = image.signal.shape
+        if -0.5 <= x < width - 0.5 and -0.5 <= y < height - 0.5:
+            return observation.epoch
+    return None
