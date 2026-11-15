@@ -67,6 +67,8 @@ Photometry uses the local FITS ePSF through Photutils and fits its amplitude and
 
 Run `.\.venv\Scripts\python.exe -m pytest -q`. The archive tests run Uvicorn and a local HTTP archive server to test discovery, import, comparison, photometry, a process restart, duplicate requests, and rejected FITS files. They use generated FITS by default. To use verified DR1 FITS, set `$env:PLANET_X_E2E_SAMPLES = (Resolve-Path data/samples).Path` before running `python -m pytest -q tests/test_archive_e2e.py`. Additional real-data tests cover comparison, spectrum, and all six detector layers when the FITS files are present. See the [data inventory and citations](docs/DATA_SOURCES.md) and the [versioned manifest](data/manifests/spherex-dr1.json) for exact files. Switch `PLANET_X_MANIFEST` to load a new release with the same schema and supported FITS layouts, then run `planet-x-data` before restarting the API.
 
+Run `python -m pytest -q tests/test_archive_e2e.py -k quota` to check shared storage. The tests cover 32 mixed requests against two workers near capacity and reclaiming space after a worker is killed mid-download.
+
 Run `.\.venv\Scripts\python.exe -m pipeline.benchmark_barnard` to check target coverage and quality at the expected coordinates of Barnard's Star. See the [benchmark report](docs/benchmarks/BARNARDS_STAR.md) for results and full-exposure commands.
 
 ## Backend CI/CD

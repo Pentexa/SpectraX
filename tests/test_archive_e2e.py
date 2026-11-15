@@ -383,6 +383,32 @@ def test_import_quota_across_processes_and_restart(irsa, tmp_path):
         stored_bytes = sum(path.stat().st_size for path in (directory / epoch).iterdir())
         assert stored["size_bytes"] < stored_bytes <= quota
 
+        coords = {"ra": 269.448214, "dec": 4.695946} if real_samples else CENTER
+        cases = [
+            ("POST", "/api/archive/import", {"json": payloads[winner]}, 200),
+            ("POST", "/api/archive/import", {"json": payloads[1 - winner]}, 507),
+            ("GET", "/api/datasets", {}, 200),
+            ("GET", "/api/photometry", {"params": {**coords, "epoch": epoch}}, 200),
+        ]
+        # Mix reads and writes on both workers while only one cutout fits.
+        with ThreadPoolExecutor(12) as pool:
+            jobs = [
+                (pool.submit(client.request, method, path, **kwargs), path, status)
+                for _ in range(4)
+                for client in (first, second)
+                for method, path, kwargs, status in cases
+            ]
+            for future, path, status in jobs:
+                response = future.result()
+                assert response.status_code == status, response.text
+                if status == 507:
+                    assert response.json()["error"]["code"] == "import_quota_exceeded"
+                elif path == "/api/datasets":
+                    assert response.json()["observations"] == [stored]
+                else:
+                    assert response.json()["epoch"] == epoch
+        assert [entry.name for entry in directory.iterdir() if entry.is_dir()] == [epoch]
+
     with running_api(irsa, tmp_path, quota_bytes=stored_bytes + 1) as client:
         start = len(server.calls)
         hit = client.post("/api/archive/import", json=payloads[winner])
@@ -393,7 +419,6 @@ def test_import_quota_across_processes_and_restart(irsa, tmp_path):
         assert blocked.status_code == 507, blocked.text
         assert blocked.json()["error"]["details"]["used_bytes"] == stored_bytes
         assert client.get("/api/datasets").json()["observations"] == [stored]
-        coords = {"ra": 269.448214, "dec": 4.695946} if real_samples else CENTER
         flux = client.get("/api/photometry", params={**coords, "epoch": epoch})
         assert flux.status_code == 200, flux.text
         assert [entry.name for entry in directory.iterdir() if entry.is_dir()] == [epoch]
