@@ -53,11 +53,12 @@ def fetch(product: Product, data_dir: Path, *, full_image: bool = False) -> Path
     data_dir.mkdir(exist_ok=True, parents=True)
     errors = []
     for source in sources:
-        try:
-            _download(source, target)
-            return target
-        except (OSError, ValueError) as exc:
-            errors.append(str(exc))
+        for url in (source.access, *source.download_mirrors):
+            try:
+                _download(source.model_copy(update={"access": url}), target)
+                return target
+            except (OSError, ValueError) as exc:
+                errors.append(str(exc))
     raise ValueError("; ".join(errors))
 
 
@@ -80,7 +81,8 @@ def main():
         parser.error(f"No FITS products are listed for release '{args.release.upper()}'")
     products = [(product, args.data_dir) for product in [*observations, *(cubes if args.include_cubes else [])]]
     if args.include_benchmarks:
-        for target, records in load_benchmark_observations(args.manifest.parent).items():
+        manifest_dir = configured_path("PLANET_X_BENCHMARK_MANIFEST_DIR", str(args.manifest.resolve().parent))
+        for target, records in load_benchmark_observations(manifest_dir).items():
             products.extend((record, args.data_dir / target) for record in records
                             if not args.release or record.release == args.release.upper())
     for product, directory in products:

@@ -9,6 +9,7 @@ import pytest
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from fastapi.testclient import TestClient
+from pydantic import AnyHttpUrl
 
 from apps.api.main import create_app
 from pipeline.benchmark_barnard import benchmark
@@ -193,6 +194,7 @@ def test_ingest_fallback_and_idempotency(test_data, monkeypatch):
     manifest, root = test_data
     product = load_manifest(manifest).observations[0]
     file = (root / product.filename).read_bytes()
+    product.download_mirrors = [AnyHttpUrl('https://example.invalid/cutout-mirror.fits')]
     product.full_image = ArchiveFile(access='https://example.invalid/full.fits', size_bytes=len(file),
                                      sha256=hashlib.sha256(file).hexdigest())
     requests = []
@@ -201,13 +203,15 @@ def test_ingest_fallback_and_idempotency(test_data, monkeypatch):
         requests.append(url)
         if url == str(product.access):
             raise URLError('Unavailable')
+        if url == str(product.download_mirrors[0]):
+            return BytesIO(b'wrong cutout bytes')
         return BytesIO(file)
 
     monkeypatch.setattr('pipeline.ingest.urlopen', download)
     target = root / 'download'
     assert fetch(product, target).read_bytes() == file
     assert fetch(product, target).is_file()
-    assert requests == [str(product.access), str(product.full_image.access)]
+    assert requests == [str(product.access), str(product.download_mirrors[0]), str(product.full_image.access)]
 
 
 def test_real_dr1_when_downloaded():

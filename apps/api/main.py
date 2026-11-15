@@ -60,6 +60,7 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
                import_dir: Path | None = None) -> FastAPI:
     load_dotenv(ROOT / '.env')
     manifest_path = manifest_path or configured_path('PLANET_X_MANIFEST', 'data/manifests/spherex-dr1.json')
+    benchmark_manifest_dir = configured_path('PLANET_X_BENCHMARK_MANIFEST_DIR', 'data/manifests')
     data_dir = data_dir or configured_path('PLANET_X_DATA_DIR', 'data/samples')
     import_dir = import_dir or Path(os.environ.get('PLANET_X_IMPORT_DIR', data_dir / 'imports'))
     import_quota = ImportQuota(import_dir, positive_setting('PLANET_X_IMPORT_QUOTA_BYTES', DEFAULT_IMPORT_QUOTA_BYTES))
@@ -73,7 +74,7 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
         api.state.manifest = manifest
         api.state.observations = {record.epoch: record for record in manifest.observations}
         api.state.cubes = {record.epoch: record for record in manifest.cubes}
-        api.state.benchmarks = load_benchmark_observations(ROOT / 'data/manifests')
+        api.state.benchmarks = load_benchmark_observations(benchmark_manifest_dir) if benchmark_manifest_dir.is_dir() else {}
         api.state.benchmark_epochs = {
             record.epoch: (record, data_dir / target_id) for target_id, records in api.state.benchmarks.items()
             for record in records

@@ -23,6 +23,7 @@ class ArchiveFile(BaseModel):
     access: AnyHttpUrl
     size_bytes: int = Field(gt=0, le=512 * 1024**2)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    download_mirrors: list[AnyHttpUrl] = Field(default_factory=list, max_length=4, exclude=True)
 
 
 class Product(ArchiveFile):

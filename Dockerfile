@@ -3,6 +3,7 @@ FROM python:3.11-slim-bookworm AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PLANET_X_MANIFEST=/app/data/manifests/spherex-dr1.json \
+    PLANET_X_BENCHMARK_MANIFEST_DIR=/app/data/manifests \
     PLANET_X_DATA_DIR=/data \
     PLANET_X_IMPORT_DIR=/imports
 
