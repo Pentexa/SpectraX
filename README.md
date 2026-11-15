@@ -133,3 +133,7 @@ Add `--wide-sky` to verify an additional IRSA tile outside the manifest region.
 On a Docker host, run `docker compose -f deploy/compose.yaml up -d --wait`. Set `SPECTRAX_IMAGE` to the desired image tag or digest. Compose prepares the verified sample files, mounts them read-only in the API, and keeps imported FITS and cached cubes in a writable volume. The gateway on `127.0.0.1:8080` applies a request limit and returns HTTP 429 when the limit is exceeded. Set `PLANET_X_CORS_ORIGINS` to the frontend origin when it is known.
 
 Point the host's HTTPS reverse proxy at the gateway and use `/api/ready` for uptime checks. The gateway keeps a shared rate limit for archive and cube routes. `docker compose -f deploy/compose.yaml logs api gateway` shows request and service logs. Keep the `samples` and `imports` volumes across upgrades.
+
+## Author
+
+- Korhan Erol
