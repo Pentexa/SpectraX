@@ -3,7 +3,7 @@ from pathlib import Path
 from pipeline.catalog import Observation, load_manifest
 
 BENCHMARK_FIELDS = {
-    "barnard": 0.05,
+    "barnard": 0.18,
     "epsilon-indi-b": 0.2,
     "wise-0855": 0.18,
     "rw-aurigae": 0.05,

@@ -2,7 +2,10 @@ import argparse
 import hashlib
 import os
 from pathlib import Path
+from functools import lru_cache
+from http.client import HTTPException
 from tempfile import NamedTemporaryFile
+from time import monotonic
 from urllib.request import urlopen
 
 from dotenv import load_dotenv
@@ -17,15 +20,20 @@ def configured_path(variable: str, default: str) -> Path:
     return ROOT / os.environ.get(variable, default)
 
 
-def _download(source: ArchiveFile, target: Path):
+def _download(source: ArchiveFile, target: Path, deadline: float | None = None):
     temporary = None
     try:
         with NamedTemporaryFile(dir=target.parent, delete=False) as output:
             temporary = Path(output.name)
             digest = hashlib.sha256()
             size = 0
-            with urlopen(str(source.access), timeout=30) as response:
+            timeout = 30 if deadline is None else min(12, deadline - monotonic())
+            if timeout <= 0:
+                raise TimeoutError("Archive download deadline reached")
+            with urlopen(str(source.access), timeout=timeout) as response:
                 while chunk := response.read(1024 * 1024):
+                    if deadline is not None and monotonic() > deadline:
+                        raise TimeoutError("Archive download deadline reached")
                     size += len(chunk)
                     if size > source.size_bytes:
                         raise ValueError("Download exceeded expected size")
@@ -39,25 +47,43 @@ def _download(source: ArchiveFile, target: Path):
             temporary.unlink(missing_ok=True)
 
 
-def fetch(product: Product, data_dir: Path, *, full_image: bool = False) -> Path:
-    target = data_dir / product.filename
-    sources = [product]
+def _sources(product: Product, full_image: bool = False) -> list[ArchiveFile]:
     if isinstance(product, Observation) and product.full_image is not None:
-        sources = [product.full_image] if full_image else [product, product.full_image]
-    if target.is_file() and target.stat().st_size in {source.size_bytes for source in sources}:
-        with target.open("rb") as file:
-            digest = hashlib.file_digest(file, "sha256").hexdigest()
-        if any(digest == source.sha256 for source in sources):
-            return target
+        return [product.full_image] if full_image else [product, product.full_image]
+    return [product]
+
+
+@lru_cache(maxsize=64)
+def _sha256(path: Path, mtime_ns: int, size: int) -> str:
+    with path.open("rb") as file:
+        return hashlib.file_digest(file, "sha256").hexdigest()
+
+
+def verified_file(product: Product, directory: Path, *, full_image: bool = False) -> bool:
+    target = directory / product.filename
+    try:
+        stat = target.stat()
+        expected = {source.sha256 for source in _sources(product, full_image) if source.size_bytes == stat.st_size}
+        return bool(expected) and _sha256(target, stat.st_mtime_ns, stat.st_size) in expected
+    except OSError:
+        return False
+
+
+def fetch(product: Product, data_dir: Path, *, full_image: bool = False, deadline: float | None = None) -> Path:
+    target = data_dir / product.filename
+    if verified_file(product, data_dir, full_image=full_image):
+        return target
 
     data_dir.mkdir(exist_ok=True, parents=True)
     errors = []
-    for source in sources:
+    for source in _sources(product, full_image):
         for url in (source.access, *source.download_mirrors):
+            if deadline is not None and monotonic() >= deadline:
+                raise TimeoutError("Archive download deadline reached")
             try:
-                _download(source.model_copy(update={"access": url}), target)
+                _download(source.model_copy(update={"access": url}), target, deadline)
                 return target
-            except (OSError, ValueError) as exc:
+            except (OSError, ValueError, HTTPException) as exc:
                 errors.append(str(exc))
     raise ValueError("; ".join(errors))
 

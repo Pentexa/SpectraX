@@ -8,6 +8,7 @@ from astropy.wcs import NoConvergence
 from pydantic import Field, FiniteFloat
 from scipy.optimize import least_squares
 
+from pipeline.astrometry_wings import fit_saturated_wings
 from pipeline.catalog import DataError, Observation, Position
 from pipeline.compare import output_grid
 from pipeline.photometry import _fit_window
@@ -75,6 +76,16 @@ def _centroid(directory: Path, observation: Observation, expected: SkyCoord):
     return image, measured, sky_covariance, metrics
 
 
+def _target_centroid(directory, record, position, target):
+    try:
+        return _centroid(directory, record, position)
+    except DataError as exc:
+        flags = (exc.details or {}).get("core_flags", [])
+        if target is None or target.id != "barnard" or "BLOOM" not in flags:
+            raise
+        return fit_saturated_wings(directory, record, position)
+
+
 def astrometry(request: AstrometryRequest, locate: Callable[[str], tuple[Observation, Path]]) -> dict:
     selected = sorted((locate(epoch) for epoch in request.epochs), key=lambda item: item[0].observation_start_mjd)
     a, b = [record for record, _ in selected]
@@ -93,7 +104,7 @@ def astrometry(request: AstrometryRequest, locate: Callable[[str], tuple[Observa
                   "input_position": {"ra": float(position.ra.deg), "dec": float(position.dec.deg)},
                   "centroid": None, "error": None}
         try:
-            result = _centroid(directory, record, position)
+            result = _target_centroid(directory, record, position, target)
         except DataError as exc:
             sample["error"] = {"code": exc.code, "message": str(exc)}
             if exc.details is not None:
@@ -113,14 +124,16 @@ def astrometry(request: AstrometryRequest, locate: Callable[[str], tuple[Observa
     if len(fits) < 2:
         return report
 
-    (image_a, center_a, covariance_a, _), (image_b, center_b, covariance_b, _) = fits
+    (image_a, center_a, covariance_a, metrics_a), (image_b, center_b, covariance_b, metrics_b) = fits
     midpoint = positions[0].directional_offset_by(positions[0].position_angle(positions[1]),
                                                   positions[0].separation(positions[1]) / 2)
     grid, shape = output_grid(Position(ra=midpoint.ra.deg, dec=midpoint.dec.deg, fov=request.fov),
                               max(image_a.pixel_scale, image_b.pixel_scale))
     report["status"] = "registration_unverified"
     try:
-        registration = assess_registration(image_a, image_b, grid, shape, exclude=(center_a, center_b))
+        exclusion = 10 if any(item.get("method") == "saturated_wings" for item in (metrics_a, metrics_b)) else 3
+        registration = assess_registration(image_a, image_b, grid, shape, exclude=(center_a, center_b),
+                                           exclude_radius_pixels=exclusion)
     except (ValueError, NoConvergence, RuntimeError):
         return report
     report["registration"] = registration
