@@ -13,7 +13,7 @@ export function observationDate(mjd: number | null) {
 export function ArchivePanel({ target, field, onSelection, openExample }: {
   target: ScienceTarget | null;
   field: SkyField;
-  onSelection: (epochs: string[], observations: ArchiveCutout[]) => void;
+  onSelection: (epochs: string[], observations: ArchiveCutout[], localOnly: boolean) => void;
   openExample: () => void;
 }) {
   const [release, setRelease] = useState("both");
@@ -21,6 +21,7 @@ export function ArchivePanel({ target, field, onSelection, openExample }: {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [records, setRecords] = useState<(ArchiveObservation & ArchiveCutout)[] | null>(null);
+  const [localOnly, setLocalOnly] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [chosen, setChosen] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -28,19 +29,20 @@ export function ArchivePanel({ target, field, onSelection, openExample }: {
   const revision = useRef(0);
   useEffect(() => () => { revision.current += 1; }, []);
 
-  async function search(localOnly = false) {
+  async function search(downloadedOnly = false) {
     const request = ++revision.current;
+    setLocalOnly(downloadedOnly);
     setError(null);
     setChosen([]);
     setRecords(null);
     setNotice(null);
-    setBusy(localOnly ? "local" : "search");
+    setBusy(downloadedOnly ? "local" : "search");
     try {
       const start = startDate ? Date.parse(startDate) / 86_400_000 + 40587 : undefined;
       const end = endDate ? Date.parse(endDate) / 86_400_000 + 40588 : undefined;
       const releases = release === "both" ? ["DR1", "QR3"] : [release];
       const results = await Promise.allSettled(releases.map((item) => scienceApi.observations(
-        target?.id ?? null, field, item, wavelength ? Number(wavelength) : undefined, start, end, localOnly,
+        target?.id ?? null, field, item, wavelength ? Number(wavelength) : undefined, start, end, downloadedOnly,
       )));
       if (revision.current !== request) return;
       const available = results.filter((result) => result.status === "fulfilled");
@@ -51,7 +53,7 @@ export function ArchivePanel({ target, field, onSelection, openExample }: {
         return code === "archive_unavailable" || code === "archive_timeout";
       });
       const hasLocalResults = available.some((result) => usesLocal(result.value));
-      if (localOnly) setNotice("Showing downloaded SPHEREx FITS only.");
+      if (downloadedOnly) setNotice("Showing downloaded SPHEREx FITS only.");
       else if (hasLocalResults) setNotice("IRSA live search is unavailable. Local FITS are included.");
       else if (outages.length) setNotice(
         `IRSA live search is unavailable for ${outages.join(" and ")}. Try again later or search downloaded FITS.`,
@@ -81,7 +83,7 @@ export function ArchivePanel({ target, field, onSelection, openExample }: {
     setBusy("import");
     try {
       const epochs = await scienceApi.importExposures(selected, field);
-      if (revision.current === request) onSelection(epochs, selected);
+      if (revision.current === request) onSelection(epochs, selected, localOnly);
     } catch (err) {
       if (revision.current === request) setError(errorMessage(err));
     } finally {

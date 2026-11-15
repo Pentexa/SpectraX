@@ -51,6 +51,7 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
   const [mode, setMode] = useState<ComparisonMode>("side_by_side");
   const [fixedPair, setFixedPair] = useState<EpochPair | null>(null);
   const [archiveSelection, setArchiveSelection] = useState<{
+    localOnly?: boolean;
     observations: ArchiveCutout[];
     original?: { fov: number; epochs: string[] };
   } | null>(null);
@@ -121,18 +122,22 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
   const selected = archiveSelection ? needsImport ? imported.data : archiveSelection.original?.epochs ?? null : fixedPair;
   const pair = useMemo<EpochPair | null>(() => selected && selected.length >= 2
     ? [selected[0], selected[selected.length - 1]] : null, [selected]);
+  const hasBenchmark = activeTarget?.benchmark_archive_available ?? activeTarget?.benchmark_available;
+  const preferArchive = !archiveSelection?.localOnly;
   const loadBenchmark = useCallback((signal: AbortSignal) => scienceApi.benchmark(targetId!, fov, signal), [targetId, fov]);
-  const benchmark = useScienceRequest(activeTarget?.benchmark_available && !fixedPair && !archiveSelection ? loadBenchmark : null);
+  const benchmark = useScienceRequest(hasBenchmark && !showAtlas && !fixedPair && !archiveSelection ? loadBenchmark : null);
   const epochs = useMemo<EpochPair | null>(() => pair ?? (benchmark.data
     ? [benchmark.data.comparison.epochs.a.epoch, benchmark.data.comparison.epochs.b.epoch] : null), [benchmark.data, pair]);
   const timelineEpochs = selected && selected.length > 2 ? selected
-    : !fixedPair && !archiveSelection ? activeTarget?.timeline_epochs : undefined;
+    : !fixedPair && !archiveSelection ? activeTarget?.archive_timeline_epochs ?? activeTarget?.timeline_epochs : undefined;
   const timelineAvailable = Boolean(timelineEpochs && timelineEpochs.length >= 3);
   const showTimelinePanel = showTimeline && (timelineAvailable || Boolean(archiveSelection && archiveSelection.observations.length > 2));
-  const loadTimeline = useCallback((signal: AbortSignal) => scienceApi.timeline(field, timelineEpochs!, signal), [field, timelineEpochs]);
+  const loadTimeline = useCallback((signal: AbortSignal) => scienceApi.timeline(field, timelineEpochs!, signal, preferArchive),
+    [field, timelineEpochs, preferArchive]);
   const timeline = useScienceRequest(showTimelinePanel && !showAtlas && timelineAvailable ? loadTimeline : null);
-  const loadComparison = useCallback((signal: AbortSignal) => scienceApi.compare(field, epochs!, mode, signal), [field, epochs, mode]);
-  const comparison = useScienceRequest(epochs && !showTimelinePanel && (pair || mode !== "side_by_side") ? loadComparison : null);
+  const loadComparison = useCallback((signal: AbortSignal) => scienceApi.compare(field, epochs!, mode, signal, preferArchive),
+    [field, epochs, mode, preferArchive]);
+  const comparison = useScienceRequest(epochs && !showAtlas && !showTimelinePanel && (pair || mode !== "side_by_side") ? loadComparison : null);
   const loadAstrometry = useCallback((signal: AbortSignal) => scienceApi.astrometry(targetId, field, pair!, signal), [targetId, field, pair]);
   const astrometry = useScienceRequest(pair && !showTimelinePanel ? loadAstrometry : null);
 
@@ -201,7 +206,7 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
               setCoordinates(value);
               clearSelection();
             }} />
-            {(!embedded || (!pair && !activeTarget?.benchmark_available)) && <ArchivePanel key={`${targetId ?? "field"}:${ra}:${dec}:${fov}`} field={field} target={activeTarget}
+            {(!embedded || (!pair && !hasBenchmark)) && <ArchivePanel key={`${targetId ?? "field"}:${ra}:${dec}:${fov}`} field={field} target={activeTarget}
               openExample={() => {
                 setCoordinates({ ra: 269.45, dec: 4.7 });
                 setFov(0.04);
@@ -211,9 +216,9 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
                 setShowAtlas(false);
                 setShowTimeline(false);
               }}
-              onSelection={(epochs, observations) => {
+              onSelection={(epochs, observations, localOnly) => {
                 setFixedPair(null);
-                setArchiveSelection({ observations, original: { fov: archiveCutoutWidth(fov), epochs } });
+                setArchiveSelection({ observations, localOnly, original: { fov: archiveCutoutWidth(fov), epochs } });
                 setMode("side_by_side");
                 setShowAtlas(false);
                 setShowTimeline(epochs.length > 2);
@@ -237,7 +242,7 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
                 <label className="flex items-center gap-1 text-[#ffc982]">
                   <input type="checkbox" checked={showWise} onChange={(event) => setShowWise(event.target.checked)} /> AllWISE
                 </label>
-                {(fixedPair || archiveSelection) && activeTarget?.benchmark_available && <button type="button" className={controlClass} onClick={clearSelection}>Restore benchmark pair</button>}
+                {(fixedPair || archiveSelection) && hasBenchmark && <button type="button" className={controlClass} onClick={clearSelection}>Restore benchmark pair</button>}
               </div>
               {(gaia.loading || wise.loading) && <Status>Loading catalog overlays…</Status>}
               {(gaia.error || wise.error) && <Status error>{gaia.error ?? wise.error}</Status>}

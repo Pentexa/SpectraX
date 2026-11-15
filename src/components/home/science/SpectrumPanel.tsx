@@ -41,6 +41,8 @@ export function SpectrumPanel({ field }: { field: SkyField }) {
         {spectrum.data && (
           <>
             <Status>{spectrum.data.available_channels}/102 available · multi-epoch surface brightness · {spectrum.data.unit}</Status>
+            {spectrum.data.delivery && <Status>{spectrum.data.delivery === "archive_cube"
+              ? "Official DR1 archive cube" : "Downloaded FITS fallback"}</Status>}
             <SciencePlot points={channels.map((point) => ({ x: point.wavelength_um, y: point.flux }))} label="SPHEREx spectral surface brightness" xLabel="Wavelength (µm)" />
             <div className="grid grid-cols-[repeat(17,1fr)] gap-0.5" aria-label="102 detector channels">
               {channels.map((point, index) => (

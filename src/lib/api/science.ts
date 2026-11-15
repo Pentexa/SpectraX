@@ -11,7 +11,9 @@ export type ScienceTarget = SkyField & {
   name: string;
   kind: "proper_motion" | "binary" | "variability";
   benchmark_available: boolean;
+  benchmark_archive_available?: boolean;
   timeline_epochs?: string[];
+  archive_timeline_epochs?: string[];
   recommended_wavelength_um: number;
   pm_ra_cosdec_mas_yr: number;
   pm_dec_mas_yr: number;
@@ -41,6 +43,14 @@ export interface Exposure {
   };
 }
 
+export const archiveDeliveryLabel = {
+  archive_download: "Fetched from archive",
+  archive_cache: "Archive cache",
+  downloaded_fallback: "Downloaded FITS fallback",
+  imported_cutout: "Imported archive cutout",
+};
+type ArchiveDelivery = Record<string, keyof typeof archiveDeliveryLabel>;
+
 export interface Astrometry {
   status: "measured" | "centroid_unavailable" | "registration_unverified";
   elapsed_days: number;
@@ -64,6 +74,7 @@ export interface Comparison {
   images: { a: Pixels; b: Pixels; result: Pixels | null };
   units: { a: string; b: string; result: string | null };
   epochs: { a: Exposure; b: Exposure };
+  delivery?: ArchiveDelivery;
   alignment: { overlap_fraction: number; arithmetic_valid_fraction: number | null };
   measurement: { difference: number | null; uncertainty: number | null } | null;
   warnings: string[];
@@ -91,6 +102,7 @@ export const MAX_TIMELINE_EPOCHS = 8;
 
 export interface Timeline {
   grid: SkyGrid;
+  delivery?: ArchiveDelivery;
   unit: string;
   matching_bandpasses: boolean;
   frames: {
@@ -122,6 +134,7 @@ export interface SpectrumChannel {
 
 export interface Spectrum {
   epoch: string;
+  delivery?: "archive_cube" | "downloaded_fallback";
   unit: string;
   available_channels: number;
   channels: SpectrumChannel[];
@@ -211,7 +224,8 @@ export const scienceApi = {
   targets: () => apiClient.get<{ targets: ScienceTarget[] }>("/api/targets"),
   releases: (signal: AbortSignal) => apiClient.get<{ releases: Release[] }>("/api/releases", { signal }),
   benchmark: (targetId: string, fov: number, signal: AbortSignal) =>
-    apiClient.get<Benchmark>(query(`/api/targets/${encodeURIComponent(targetId)}/benchmark`, { fov }), { signal }),
+    apiClient.get<Benchmark>(query(`/api/targets/${encodeURIComponent(targetId)}/benchmark`, { fov, live: 1 }),
+      { signal, timeout: 55_000 }),
   observations: (targetId: string | null, field: SkyField, release: string, wavelength?: number,
     start_mjd?: number, end_mjd?: number, localOnly = false) =>
     apiClient.get<{ observations: ArchiveObservation[]; scope?: "live" | "local"; archive?: { scope?: "live" | "local" } }>(query(
@@ -234,10 +248,12 @@ export const scienceApi = {
     }
     return epochs;
   },
-  timeline: (field: SkyField, epochs: readonly string[], signal: AbortSignal) =>
-    apiClient.post<Timeline>("/api/timeline", { ...field, epochs }, { signal, timeout: 25_000 }),
-  compare: (field: SkyField, epochs: readonly [string, string], mode: ComparisonMode, signal: AbortSignal) =>
-    apiClient.get<Comparison>(query("/api/compare", { ...field, epoch_a: epochs[0], epoch_b: epochs[1], mode }), { signal }),
+  timeline: (field: SkyField, epochs: readonly string[], signal: AbortSignal, live = true) =>
+    apiClient.post<Timeline>(query("/api/timeline", { live: live ? 1 : undefined }), { ...field, epochs },
+      { signal, timeout: 55_000 }),
+  compare: (field: SkyField, epochs: readonly [string, string], mode: ComparisonMode, signal: AbortSignal, live = true) =>
+    apiClient.get<Comparison>(query("/api/compare", { ...field, epoch_a: epochs[0], epoch_b: epochs[1], mode,
+      live: live ? 1 : undefined }), { signal, timeout: 55_000 }),
   astrometry: (targetId: string | null, field: SkyField, epochs: readonly [string, string], signal: AbortSignal) =>
     apiClient.post<Astrometry>("/api/astrometry", {
       ...(targetId ? { target_id: targetId } : { ra: field.ra, dec: field.dec }), epochs, fov: Math.max(0.02, field.fov),
@@ -247,7 +263,7 @@ export const scienceApi = {
       ...(targetId ? { target_id: targetId } : { ra: field.ra, dec: field.dec }), epochs,
     }, { signal, timeout: 20_000 }),
   spectrum: (field: SkyField, signal: AbortSignal) =>
-    apiClient.get<Spectrum>(query("/api/spectrum", { ra: field.ra, dec: field.dec }), { signal, timeout: 270_000 }),
+    apiClient.get<Spectrum>(query("/api/spectrum", { ra: field.ra, dec: field.dec, live: 1 }), { signal, timeout: 270_000 }),
   layer: (field: SkyField, detector: number, channel: number | undefined, epoch: string, signal: AbortSignal) =>
     apiClient.get<SpectralImage>(query(`/api/layers/${detector}`, {
       ...field, epoch, channel, combine: channel === undefined ? 1 : undefined,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Astrometry, Comparison, ComparisonMode } from "@/lib/api/science";
+import { archiveDeliveryLabel, type Astrometry, type Comparison, type ComparisonMode } from "@/lib/api/science";
 import { observationDate } from "./ArchivePanel";
 import { FitsImage, imageRange, type SkyMark } from "./FitsImage";
 import { controlClass, Panel, Status } from "./Panel";
@@ -79,6 +79,10 @@ export function ComparisonPanel({ comparison, astrometry, loading, error, mode, 
               </button>
             </div>
           </div>
+          {comparison.delivery && <Status>{(["a", "b"] as const).map((key) => {
+            const delivery = comparison.delivery?.[comparison.epochs[key].epoch];
+            return delivery ? `${key.toUpperCase()} · ${archiveDeliveryLabel[delivery]}` : null;
+          }).filter(Boolean).join(" / ")}</Status>}
           {(comparison.flags?.a || comparison.flags?.b) && (
             <label className="flex items-center gap-1 text-[10px] text-[#ec91c6]">
               <input type="checkbox" checked={showFlags} onChange={(event) => setShowFlags(event.target.checked)} />
