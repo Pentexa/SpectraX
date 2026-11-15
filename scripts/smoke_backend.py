@@ -167,6 +167,8 @@ def verify_wide_sky(base_url: str):
     require(any(pixel is not None for row in layer["image"] for pixel in row), "Empty layer in the second sky field")
     print("Two real DR1 fields verified, including the archived tile selected by coordinate")
 
+
+def verify_live_cygnus(base_url: str):
     imported = import_irsa_exposure(base_url, CYGNUS_ARCHIVE_ID, **CYGNUS_POSITION, fov=0.05)
     require(imported["sha256"] == CYGNUS_SHA256, "Cygnus FITS differs from the reference")
     fit = get_json(base_url, "photometry", **CYGNUS_POSITION, epoch=imported["epoch"])
@@ -228,9 +230,10 @@ if __name__ == "__main__":
         verify_wise_0855(base_url)
         raise SystemExit(0)
     verify(base_url)
-    if args.live_archive:
-        verify_live_archive(base_url)
     if args.wide_sky:
         verify_wide_sky(base_url)
     if args.benchmarks:
         verify_benchmarks(base_url)
+    if args.live_archive:
+        verify_live_archive(base_url)
+        verify_live_cygnus(base_url)
