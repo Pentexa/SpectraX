@@ -1,9 +1,10 @@
 import argparse
 import json
 import math
+from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import urlencode
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 POSITION = {"ra": 269.45, "dec": 4.7}
 EPOCH_A = "dr1-2025-10-01-d1"
@@ -11,16 +12,21 @@ EPOCH_B = "dr1-2026-03-11-d1"
 CUBE = "dr1-coadd"
 QR3_EPOCH = "qr3-2026-08-25-d1"
 PHOTOMETRY_TARGET = {"ra": 269.448214, "dec": 4.695946}
+MANIFEST = Path(__file__).resolve().parents[1] / "data/manifests/spherex-dr1.json"
 
 
-def get_json(base_url: str, path: str, **params):
-    query = "?" + urlencode(params) if params else ""
+def request_json(request: Request, timeout: int) -> tuple[int, dict]:
     try:
-        with urlopen(base_url + "/api/" + path + query, timeout=20) as response:
-            return json.load(response)
+        with urlopen(request, timeout=timeout) as response:
+            return response.status, json.load(response)
     except HTTPError as error:
         body = error.read(1024).decode(errors="replace")
-        raise RuntimeError(f"GET /api/{path}{query} returned {error.code}: {body}") from error
+        raise RuntimeError(f"{request.get_method()} {request.selector} returned {error.code}: {body}") from error
+
+
+def get_json(base_url: str, path: str, *, timeout: int = 20, **params):
+    query = "?" + urlencode(params) if params else ""
+    return request_json(Request(base_url + "/api/" + path + query), timeout)[1]
 
 
 def require(condition: bool, message: str):
@@ -88,7 +94,42 @@ def verify(base_url: str):
           f"DR1 ePSF flux {photometry['flux_density_ujy']:.1f} uJy")
 
 
+def verify_live_archive(base_url: str):
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    observations = {item["epoch"]: item for item in manifest["observations"]}
+    for epoch in (EPOCH_A, QR3_EPOCH):
+        observation = observations[epoch]
+        release = observation["release"]
+        observation_id = observation["observation_id"]
+        archive_id = f"ivo://irsa.ipac/spherex_{release.lower()}?{observation_id}/D{observation['detector']}"
+        coverage = observation["coverage"]
+        results = get_json(
+            base_url, "archive/search", timeout=45, ra=coverage["ra"], dec=coverage["dec"], release=release,
+            start_mjd=observation["observation_start_mjd"] - 0.00001,
+            end_mjd=observation["observation_end_mjd"] + 0.00001, limit=30,
+        )
+        require(any(item["archive_id"] == archive_id for item in results["observations"]),
+                f"Live IRSA catalog did not return {archive_id}")
+        request = Request(base_url + "/api/archive/import",
+                          data=json.dumps(dict(coverage, archive_id=archive_id)).encode(),
+                          headers={"Content-Type": "application/json"}, method="POST")
+        status, imported = request_json(request, timeout=110)
+        require(status == 201 and imported["available_locally"], f"Expected a fresh import of {archive_id}")
+        require(imported["sha256"] == observation["sha256"] and imported["size_bytes"] == observation["size_bytes"],
+                f"Live IRSA FITS differs from the verified manifest for {archive_id}")
+        if release == "DR1":
+            photometry = get_json(base_url, "photometry", **PHOTOMETRY_TARGET, epoch=imported["epoch"])
+            require(math.isclose(photometry["flux_density_ujy"], 1428.9, rel_tol=0.02),
+                    "Unexpected ePSF flux for the live DR1 import")
+        print(f"Live IRSA verified {release} {observation_id}, {imported['size_bytes']} bytes, SHA-256 matched")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Verify the API against the manifest's real SPHEREx DR1 and QR3 samples")
     parser.add_argument("--base-url", default="http://127.0.0.1:8765")
-    verify(parser.parse_args().base_url.rstrip("/"))
+    parser.add_argument("--live-archive", action="store_true", help="Also search IRSA and download into a fresh import directory")
+    args = parser.parse_args()
+    base_url = args.base_url.rstrip("/")
+    verify(base_url)
+    if args.live_archive:
+        verify_live_archive(base_url)

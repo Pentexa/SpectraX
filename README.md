@@ -75,17 +75,20 @@ Run `.\.venv\Scripts\python.exe -m pipeline.benchmark_barnard` to check target c
 
 [GitHub Actions](https://github.com/Pentexa/SpectraX/actions/workflows/backend.yml) runs the Python 3.11 test suite on pull requests targeting `main` and on each push to `main`. After tests pass on `main`, the workflow builds the container and verifies the public DR1 and QR3 files against the manifest. It then runs the archive import tests against the verified DR1 files and HTTP tests for the release catalog, comparison, spectrum, detector layers, and QR3 cutout. Successful runs publish `ghcr.io/pentexa/spectrax-api:main` and `ghcr.io/pentexa/spectrax-api:sha-<full-commit-sha>`. The FITS files are cached by manifest hash and stay outside the published image.
 
+A release tag such as `v0.1.0` must match the package and API versions. The release workflow reruns those checks and uses the live IRSA catalog to find and download fresh DR1 and QR3 cutouts. Their sizes and SHA-256 hashes must match the manifest before the versioned image and GitHub release are published.
+
 Run the published image locally. Authenticate with GHCR first if the package is private.
 
 ```powershell
-docker run --rm -p 127.0.0.1:8765:8765 ghcr.io/pentexa/spectrax-api:main
+docker run --rm -p 127.0.0.1:8765:8765 ghcr.io/pentexa/spectrax-api:v0.1.0
 ```
 
 For FITS-backed endpoints, download the samples using the local setup above and mount them read-only. Mount a writable volume at `/imports` to keep imported cutouts across container replacement.
 
 ```powershell
 $Samples = (Resolve-Path 'data/samples').Path
-docker run --rm -p 127.0.0.1:8765:8765 --mount "type=bind,source=$Samples,target=/data,readonly" --mount "type=volume,source=spherex-imports,target=/imports" ghcr.io/pentexa/spectrax-api:main
+docker run --rm -p 127.0.0.1:8765:8765 --mount "type=bind,source=$Samples,target=/data,readonly" --mount "type=volume,source=spherex-imports,target=/imports" ghcr.io/pentexa/spectrax-api:v0.1.0
 ```
 
 With the sample data mounted, run `python scripts/smoke_backend.py` from another terminal to repeat the release smoke test.
+Add `--live-archive` and use a fresh import directory to repeat the live IRSA check.
