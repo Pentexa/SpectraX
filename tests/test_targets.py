@@ -1,6 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 from requests import Response
 
@@ -8,7 +9,7 @@ from apps.api import main
 from apps.api.main import create_app
 from pipeline import catalog_overlays, reference_light_curves, targets
 from pipeline.archive import ArchiveObservation, ArchiveSearch
-from pipeline.catalog import load_manifest
+from pipeline.catalog import DataError, load_manifest
 
 MANIFEST = Path(__file__).resolve().parents[1] / "data/manifests/spherex-dr1.json"
 
@@ -47,6 +48,35 @@ def test_existing_benchmark_manifest_directory_can_load_a_subset(tmp_path, monke
     with TestClient(create_app(MANIFEST, tmp_path)) as client:
         assert client.get("/api/targets/wise-0855/benchmark").status_code == 503
         assert client.get("/api/targets/barnard/benchmark").status_code == 404
+
+
+def test_archive_outage_serves_real_prepared_timeline_when_downloaded(monkeypatch):
+    directory = MANIFEST.parents[1] / "samples"
+    records = load_manifest(MANIFEST.with_name("spherex-rw-aurigae.json")).observations
+    if not all((directory / "rw-aurigae" / item.filename).is_file() for item in records):
+        pytest.skip("Run planet-x-data --include-benchmarks to prepare real FITS")
+
+    def unavailable(**_):
+        raise DataError("archive_unavailable", "IRSA archive request failed", 502)
+
+    monkeypatch.setattr(main, "search_images", unavailable)
+    with TestClient(create_app(MANIFEST, directory)) as client:
+        target = next(item for item in client.get("/api/targets").json()["targets"] if item["id"] == "rw-aurigae")
+        local_epochs = []
+        for release in ("DR1", "QR3"):
+            result = client.get("/api/targets/rw-aurigae/observations", params={"release": release})
+            assert result.status_code == 200
+            assert result.json()["archive"]["scope"] == "local"
+            assert all(item["available_locally"] for item in result.json()["observations"])
+            local_epochs.extend(item["epoch"] for item in result.json()["observations"])
+        assert set(local_epochs) == set(target["timeline_epochs"])
+        request = {key: target[key] for key in ("ra", "dec", "fov")}
+        result = client.post("/api/timeline", json=request | {"epochs": local_epochs[::-1]})
+        assert result.status_code == 200
+        dates = [item["mjd"] for item in result.json()["frames"]]
+        assert len(dates) == 3 and dates == sorted(set(dates))
+        assert client.post("/api/timeline", json=request | {"epochs": [local_epochs[0]] * 3}).status_code == 422
+        assert client.get("/api/archive/search", params={"ra": 0, "dec": 0}).status_code == 502
 
 
 def test_target_search_checks_the_local_fits_footprint(tmp_path, monkeypatch):

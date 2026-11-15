@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import Field, FiniteFloat
 
-from pipeline.archive import ArchiveRelease, ArchiveSearch, search_images
+from pipeline.archive import ArchiveRelease, ArchiveSearch, search_images, search_prepared
 from pipeline.astrometry import AstrometryRequest, astrometry
 from pipeline.benchmarks import BENCHMARK_FIELDS, load_benchmark_observations
 from pipeline.catalog import Cube, DataError, Position, data_path, load_manifest
@@ -30,6 +30,7 @@ from pipeline.reference_light_curves import ReferenceBand, reference_light_curve
 from pipeline.source_series import EpochId, SourceSeriesRequest, source_series
 from pipeline.spectra import detector_layer, layers, spectrum
 from pipeline.targets import DEFAULT_TARGET_MJD, TARGETS, covered_target_epoch, get_target
+from pipeline.timeline import TimelineRequest, build_timeline
 
 Epoch = Annotated[str, Query(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_.-]+$")]
 RightAscension = Annotated[float, Query(ge=0, lt=360, description="ICRS right ascension in degrees")]
@@ -110,6 +111,21 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
             raise DataError('unknown_epoch', f"No image epoch '{epoch}'", 404)
         return located
 
+    def local_observations():
+        return [*((item, data_dir) for item in api.state.manifest.observations),
+                *api.state.benchmark_epochs.values(), *list_imports(import_dir)]
+
+    def search_archive(*, position_at=None, **parameters):
+        try:
+            return search_images(**parameters)
+        except DataError as exc:
+            if exc.code not in ('archive_unavailable', 'archive_timeout'):
+                raise
+            prepared = search_prepared(**parameters, position_at=position_at)
+            if not prepared.observations:
+                raise
+            return prepared
+
     @api.get('/api/health')
     def health():
         products = [(item, data_dir) for item in [*api.state.observations.values(), *api.state.cubes.values()]]
@@ -163,22 +179,24 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
         start_mjd: ArchiveDate | None = None,
         end_mjd: ArchiveDate | None = None,
     ) -> ArchiveSearch:
-        return search_images(
+        return search_archive(
             release=release, ra=ra, dec=dec, radius_deg=radius_deg, limit=limit, wavelength_um=wavelength_um,
             start_mjd=start_mjd, end_mjd=end_mjd,
-            local_observations=[*((item, data_dir) for item in api.state.manifest.observations),
-                                *list_imports(import_dir)],
+            local_observations=local_observations(),
         )
 
     @api.get('/api/targets')
     def targets(mjd: TargetDate = DEFAULT_TARGET_MJD):
-        return {'targets': [
-            target.metadata(mjd) | {
-                'benchmark_available': target.id in api.state.benchmarks and all(
-                    (data_dir / target.id / record.filename).is_file() for record in api.state.benchmarks[target.id]
-                ),
-            } for target in TARGETS.values()
-        ]}
+        results = []
+        for target in TARGETS.values():
+            records = api.state.benchmarks.get(target.id, [])
+            directory = data_dir / target.id
+            ready = [record.epoch for record in records if (directory / record.filename).is_file()]
+            results.append(target.metadata(mjd) | {
+                'benchmark_available': len(records) >= 2 and all(record.epoch in ready for record in records[:2]),
+                'timeline_epochs': ready if len(ready) >= 3 else [],
+            })
+        return {'targets': results}
 
     @api.get('/api/catalog/{catalog}')
     def catalog_overlay(catalog: Overlay, ra: RightAscension, dec: Declination,
@@ -195,14 +213,14 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
         supplied_times = [time for time in (start_mjd, end_mjd) if time is not None]
         center_mjd = sum(supplied_times) / len(supplied_times) if supplied_times else DEFAULT_TARGET_MJD
         center = target.position(center_mjd)
-        archive = search_images(
+        local_records = local_observations()
+        archive = search_archive(
             release=release, ra=center.ra.deg, dec=center.dec.deg, radius_deg=0.015, limit=limit,
             wavelength_um=wavelength_um, start_mjd=start_mjd, end_mjd=end_mjd,
-            local_observations=[],
+            local_observations=local_records, position_at=target.position,
         )
         local = defaultdict(list)
-        for observation, directory in [*((item, data_dir) for item in api.state.manifest.observations),
-                                       *list_imports(import_dir)]:
+        for observation, directory in local_records:
             if observation.release == release and (directory / observation.filename).is_file():
                 local[observation.observation_id, observation.band].append((observation, directory))
         observations = []
@@ -249,8 +267,9 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
     def target_benchmark(target_id: str, fov: Annotated[float, Query(ge=0.01, le=0.2)] = 0.05):
         target = get_target(target_id)
         records = api.state.benchmarks.get(target_id)
-        if records is None:
+        if not records or len(records) < 2:
             raise DataError('benchmark_unavailable', 'No image pair is configured for this target', 404)
+        records = records[:2]
         directory = data_dir / target_id
         missing = [record.epoch for record in records if not (directory / record.filename).is_file()]
         if missing:
@@ -273,6 +292,10 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
                        mode: Mode = 'difference'):
         return compare_observations(Position(ra=ra, dec=dec, fov=fov), mode,
                                     require_observation(epoch_a), require_observation(epoch_b))
+
+    @api.post('/api/timeline')
+    def timeline(request: TimelineRequest):
+        return build_timeline(request, require_observation)
 
     @api.post('/api/compare/auto')
     def compare_automatically(request: AutoCompareRequest):

@@ -1,6 +1,14 @@
 # Barnard Yıldızı özdevinim kontrolü
 
-**Sonuç `not_testable`.** Hazır demo kesitleri yıldızın iki gözlem tarihindeki konumunun güneyinde kalıyor. Orijinal DR1 görüntüleri hedefi kapsıyor. Her iki görüntüde de beklenen hedef konumu etrafındaki 3 × 3 pikselin tamamı kalite maskesine giriyor. Ölçülen özdevinim ve ölçüm belirsizliği bu veri çifti için boş.
+## D6 kanat ölçümü
+
+DR1 `2025W35_1A_0484_2/D6` ve `2026W19_1A_0403_1/D6` görüntülerinden 250,6 günde **0,75 ± 1,27″ doğu** ve **7,13 ± 0,83″ kuzey** göreli kayma ölçüldü. Katalog bu tarihler için 7,20″ kuzey yönünde görünür hareket öngörüyor.
+
+Çekirdekteki doyum maskesi uygulandı. Merkez, işaretlenmemiş kanat piksellerinde ayrı ayrı 1,8–6,5 ve 2,8–8,5 piksel yarıçap aralıklarıyla uyduruldu. İki pencerenin merkez farkı her gözlemde 0,9″ altında kaldı. Belirsizlikler pencere duyarlılığını ve 17 ortak referans yıldızının hizalama saçılımını içeriyor.
+
+## İlk iki DR1 görüntüsü
+
+2025 Ekim ve 2026 Mart çiftinin sonucu `not_testable`. Hazır demo kesitleri yıldızın iki gözlem tarihindeki konumunun güneyinde kalıyor. Orijinal DR1 görüntüleri hedefi kapsıyor. Her iki görüntüde de beklenen hedef konumu etrafındaki 3 × 3 pikselin tamamı kalite maskesine giriyor.
 
 | Gözlem ortası (UTC) | Beklenen RA | Beklenen Dec | Tam görüntüde geçerli çekirdek pikseli |
 | --- | ---: | ---: | ---: |

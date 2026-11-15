@@ -18,11 +18,11 @@ Sonuçları tekrar üretmek için `GET /api/targets/{target_id}/observations` il
 
 ## Uygulamada açılan hedef çiftleri
 
-`planet-x-data --include-benchmarks` beş hedefin FITS çiftini SHA-256 doğrulamasıyla hazırlar. `GET /api/targets/{target_id}/benchmark` çiftin WCS hizalamasını ve ölçüm durumunu döndürür. Arayüz Barnard Yıldızı için iki gözlem zamanındaki katalog konumlarını, iki değişen yıldız için de SPHEREx uyum sonuçlarını ve bağımsız AAVSO optik eğrilerini gösterir.
+`planet-x-data --include-benchmarks` beş hedefin FITS dosyalarını SHA-256 doğrulamasıyla hazırlar. Her hazır zaman çizelgesi üç gerçek gözlem içerir. `GET /api/targets/{target_id}/benchmark` ölçüm çiftini, `POST /api/timeline` tarih sıralı görüntü dizisini ortak WCS ile döndürür.
 
 | Hedef | Uygulamada açılan IRSA gözlemleri | SPHEREx ölçüm durumu |
 | --- | --- | --- |
-| Barnard Yıldızı | DR1 `2025W35_1A_0484_2/D6`, `2026W19_1A_0403_1/D6` | 250,6 gün arayla yaklaşık 4,89 µm. Çekirdek maskeleri hareket ölçümünü engelliyor. |
+| Barnard Yıldızı | DR1 `2025W35_1A_0484_2/D6`, `2026W19_1A_0403_1/D6` | 250,6 günde yaklaşık 0,75″ doğu ve 7,13″ kuzey. Ölçüm maskesiz kanatlara ve 17 ortak referans yıldızına dayanıyor. |
 | RW Aurigae | DR1 `2026W11_1A_0285_1/D1`, QR3 `2026W37_1A_0234_3/D1` | 181,84 günde yaklaşık 0,77 µm'de açıklık akısı 131,0 mJy'den 200,5 mJy'ye çıktı. |
 | R Draconis | DR1 `2025W29_1A_0141_4/D1`, QR3 `2026W28_2A_0364_4/D1` | 361,65 günde yaklaşık 0,78 µm'de maskesiz dış halkalar sönükleşti. Çekirdek iki pozda da doyumlu. |
 

@@ -64,6 +64,33 @@
         "size_bytes": 65859840,
         "sha256": "97ebddc8568b6cebfd06830bc9c7a988d00c0ebe01f54595a79768bc6ceb72c8"
       }
+    },
+    {
+      "access": "https://irsa.ipac.caltech.edu/ibe/data/spherex/dr1/level2/2025W36_1A/l2b-v27-2026-232/1/level2_2025W36_1A_0446_1D1_spx_l2b-v27-2026-232.fits?center=76.95659074212332,30.401293503924766&size=0.05",
+      "size_bytes": 3965760,
+      "sha256": "f5c8ad1c599840451a04012b591ed2738373de5dacf1276e78a5db6969a730c2",
+      "epoch": "rw-aurigae-timeline-c",
+      "source": "NASA/IPAC IRSA SPHEREx",
+      "release": "DR1",
+      "observation_id": "2025W36_1A_0446_1",
+      "observation_start_mjd": 60920.977365,
+      "observation_end_mjd": 60920.978697,
+      "filename": "rw-aurigae-timeline-c.fits",
+      "calibration": "SPHEREx DR1 Level 2B v27",
+      "processing_history": [
+        "SPHEREx Level 2B calibration",
+        "IRSA cutout"
+      ],
+      "coverage": {
+        "ra": 76.95659074212332,
+        "dec": 30.401293503924766,
+        "fov": 0.05
+      },
+      "flags": "FLAGS extension. SOURCE (bit 21) is allowed. All other set bits are masked.",
+      "band": "SPHEREx-D1",
+      "detector": 1,
+      "spectral_wcs": "spherex-lvf",
+      "reject_flag_bits": 4292870143
     }
   ]
 }

@@ -202,10 +202,18 @@ def assert_wise_0855(result: dict):
 
 def verify_benchmarks(base_url: str):
     catalog = get_json(base_url, "targets")["targets"]
-    available = {item["id"] for item in catalog if item["benchmark_available"]}
-    require(available == {"barnard", "epsilon-indi-b", "wise-0855", "rw-aurigae", "r-draconis"},
+    available = {item["id"]: item for item in catalog if item["benchmark_available"]}
+    require(set(available) == {"barnard", "epsilon-indi-b", "wise-0855", "rw-aurigae", "r-draconis"},
             "Expected a prepared pair for every challenge target")
     for target in sorted(available):
+        target_info = available[target]
+        _, timeline = post_json(base_url, "timeline", ra=target_info["ra"], dec=target_info["dec"],
+                                fov=target_info["fov"], epochs=target_info["timeline_epochs"][::-1])
+        frames = timeline["frames"]
+        require(len(frames) == 3 and all(frame["coverage"] > 0.5 for frame in frames),
+                f"Expected three playable frames for {target}")
+        dates = [frame["mjd"] for frame in frames]
+        require(dates == sorted(set(dates)), f"Timeline dates must be distinct and sorted for {target}")
         result = get_json(base_url, f"targets/{target}/benchmark")
         comparison = result["comparison"]
         require(comparison["mode"] == "side_by_side" and comparison["alignment"]["overlap_fraction"] > 0.5,
@@ -223,10 +231,14 @@ def verify_benchmarks(base_url: str):
                     "Unexpected Epsilon Indi B displacement")
             print(f"Epsilon Indi B displacement verified: {offset['east']:.2f} arcsec east, {offset['north']:.2f} arcsec north")
         elif target == "barnard":
-            require(astrometry["status"] == "centroid_unavailable" and astrometry["measured_offset_arcsec"] is None,
-                    "A masked Barnard core must not report a measured displacement")
-            require(astrometry["predicted_catalog_offset_arcsec"]["north"] > 0, "Missing Barnard catalog prediction")
-            print("Barnard images and catalog displacement verified; FITS masks prevent a centroid measurement")
+            require(astrometry["status"] == "measured" and astrometry["registration"]["used_sources"] >= 10,
+                    "Barnard wing astrometry failed relative registration")
+            require(all(sample["centroid"]["method"] == "saturated_wings" for sample in astrometry["samples"]),
+                    "Barnard motion must use the unmasked wings")
+            offset = astrometry["measured_offset_arcsec"]
+            require(math.isclose(offset["north"], 7.13, abs_tol=0.6) and offset["significance"] > 5,
+                    "Unexpected Barnard displacement")
+            print(f"Barnard wing displacement verified: {offset['east']:.2f} arcsec east, {offset['north']:.2f} arcsec north")
         else:
             epochs = [comparison["epochs"][key]["epoch"] for key in ("a", "b")]
             _, photometry = post_json(base_url, "source-series", target_id=target, epochs=epochs)
