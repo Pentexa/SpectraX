@@ -16,6 +16,16 @@ RW Aurigae için 1,31 µm arşiv filtresiyle iki DR1 zaman penceresinde on D2 zi
 
 Sonuçları tekrar üretmek için `GET /api/targets/{target_id}/observations` ile kayıtları ve tahmini konumları al. Her arşiv kimliği için `POST /api/archive/import` çağrısında ilgili gözlemin tahmini konumunu ve `fov: 0.05` değerini kullan. Dönen epoch değerlerini ve `target_id` alanını `POST /api/source-series` çağrısına gönder. `predicted_catalog_offset_arcsec` katalog tahminidir. `light_curves[].change` yalnızca uyumlu ve yeterli kalitedeki akı ölçümleri için hesaplanır. [Barnard piksel denetimi](BARNARDS_STAR.md)
 
+## Uygulamada açılan hedef çiftleri
+
+`planet-x-data --include-benchmarks` beş hedefin FITS çiftini SHA-256 doğrulamasıyla hazırlar. `GET /api/targets/{target_id}/benchmark` çiftin WCS hizalamasını ve ölçüm durumunu döndürür. Arayüz Barnard Yıldızı için iki gözlem zamanındaki katalog konumlarını, iki değişen yıldız için de SPHEREx uyum sonuçlarını ve bağımsız AAVSO optik eğrilerini gösterir.
+
+| Hedef | Uygulamada açılan IRSA gözlemleri | SPHEREx ölçüm durumu |
+| --- | --- | --- |
+| Barnard Yıldızı | DR1 `2025W35_1A_0484_2/D6`, `2026W19_1A_0403_1/D6` | 250,6 gün arayla yaklaşık 4,89 µm. Çekirdek maskeleri hareket ölçümünü engelliyor. |
+| RW Aurigae | DR1 `2025W36_1A_0095_1/D1`, QR3 `2026W37_1A_0234_2/D1` | Yaklaşık 1,068 ve 0,754 µm. İki ePSF uyumunda da yüksek artık var. Aynı bantta güvenilir parlaklık farkı yok. |
+| R Draconis | DR1 `2025W30_1B_0289_1/D1`, QR3 `2026W29_2A_0079_1/D1` | 359,3 gün arayla yaklaşık 1,071 µm. İki gözlemde de çekirdek maskeli. |
+
 ## WISE 0855 hareket testi
 
 15 Kasım 2026. 0,20° FITS kesitleri ve 0,18° hizalama alanı kullanıldı. Ölçümde eksen başına belirsizlik yaklaşık 1,23″ ve 1,29″. İki boyutlu Mahalanobis uzaklığı 4,51. Aynı ilk gözlem, farklı bir ikinci ziyaret olan `2026W17_1B_0507_3/D6` ile karşılaştırıldığında sekiz referans kaynağıyla 5,30″ batı ve 1,52″ kuzey yönünde kayma ölçüldü. İlk ve ikinci gözlemlerin yerel dalga boyları farklı olduğundan bu sonuç astrometriyi doğrular. Parlaklık değişimi bu gözlemlerden hesaplanmadı.

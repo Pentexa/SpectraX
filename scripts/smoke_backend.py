@@ -203,7 +203,8 @@ def assert_wise_0855(result: dict):
 def verify_benchmarks(base_url: str):
     catalog = get_json(base_url, "targets")["targets"]
     available = {item["id"] for item in catalog if item["benchmark_available"]}
-    require(available == {"wise-0855", "epsilon-indi-b"}, "Expected both prepared benchmark pairs")
+    require(available == {"barnard", "epsilon-indi-b", "wise-0855", "rw-aurigae", "r-draconis"},
+            "Expected a prepared pair for every challenge target")
     for target in sorted(available):
         result = get_json(base_url, f"targets/{target}/benchmark")
         comparison = result["comparison"]
@@ -214,13 +215,25 @@ def verify_benchmarks(base_url: str):
         astrometry = result["astrometry"]
         if target == "wise-0855":
             assert_wise_0855(astrometry)
-        else:
+        elif target == "epsilon-indi-b":
             require(astrometry["status"] == "measured", "Epsilon Indi B relative registration failed")
             offset = astrometry["measured_offset_arcsec"]
             require(math.isclose(offset["east"], 3.98, abs_tol=0.8)
                     and math.isclose(offset["north"], -1.38, abs_tol=0.8) and offset["significance"] > 2.5,
                     "Unexpected Epsilon Indi B displacement")
             print(f"Epsilon Indi B displacement verified: {offset['east']:.2f} arcsec east, {offset['north']:.2f} arcsec north")
+        elif target == "barnard":
+            require(astrometry["status"] == "centroid_unavailable" and astrometry["measured_offset_arcsec"] is None,
+                    "A masked Barnard core must not report a measured displacement")
+            require(astrometry["predicted_catalog_offset_arcsec"]["north"] > 0, "Missing Barnard catalog prediction")
+            print("Barnard images and catalog displacement verified; FITS masks prevent a centroid measurement")
+        else:
+            epochs = [comparison["epochs"][key]["epoch"] for key in ("a", "b")]
+            _, photometry = post_json(base_url, "source-series", target_id=target, epochs=epochs)
+            require(len(photometry["samples"]) == 2, f"Missing photometry diagnostics for {target}")
+            require(all(curve["change"] is None for curve in photometry["light_curves"]),
+                    f"An insufficient-quality pair reported a flux change for {target}")
+            print(f"{target} images and FITS photometry diagnostics verified")
 
 
 if __name__ == "__main__":
@@ -229,7 +242,7 @@ if __name__ == "__main__":
     parser.add_argument("--live-archive", action="store_true", help="Also search IRSA and download into a fresh import directory")
     parser.add_argument("--wide-sky", action="store_true", help="Verify a second DR1 tile from the IRSA cloud archive")
     parser.add_argument("--wise-0855", action="store_true", help="Verify the API using the WISE 0855 manifest")
-    parser.add_argument("--benchmarks", action="store_true", help="Verify both prepared target pairs through the public API")
+    parser.add_argument("--benchmarks", action="store_true", help="Verify all prepared target pairs through the public API")
     args = parser.parse_args()
     base_url = args.base_url.rstrip("/")
     if args.wise_0855:

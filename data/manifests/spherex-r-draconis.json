@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "observations": [
+    {
+      "access": "https://irsa.ipac.caltech.edu/ibe/data/spherex/dr1/level2/2025W30_1B/l2b-v27-2026-220/1/level2_2025W30_1B_0289_1D1_spx_l2b-v27-2026-220.fits?center=248.16723885563516,66.75502329765914&size=0.05",
+      "size_bytes": 3965760,
+      "sha256": "011974076479af553035ffa95a596eafe34bfd2e49119f9756fb7728da8c5163",
+      "epoch": "r-draconis-a",
+      "source": "NASA/IPAC IRSA SPHEREx",
+      "release": "DR1",
+      "observation_id": "2025W30_1B_0289_1",
+      "observation_start_mjd": 60878.608219456,
+      "observation_end_mjd": 60878.609551834,
+      "filename": "r-draconis-a.fits",
+      "calibration": "SPHEREx DR1 Level 2B v27",
+      "processing_history": [
+        "SPHEREx Level 2B calibration",
+        "IRSA cutout"
+      ],
+      "coverage": {
+        "ra": 248.16723885563516,
+        "dec": 66.75502329765914,
+        "fov": 0.05
+      },
+      "flags": "FLAGS extension. SOURCE (bit 21) is allowed. All other set bits are masked.",
+      "band": "SPHEREx-D1",
+      "detector": 1,
+      "spectral_wcs": "spherex-lvf",
+      "reject_flag_bits": 4292870143,
+      "full_image": {
+        "access": "https://nasa-irsa-spherex.s3.us-east-1.amazonaws.com/dr1/level2/2025W30_1B/l2b-v27-2026-220/1/level2_2025W30_1B_0289_1D1_spx_l2b-v27-2026-220.fits",
+        "size_bytes": 65891520,
+        "sha256": "4d1024e2465efb6450352ab30f1a58c81da9670c01d65e8e4ba70ab71baf5e33"
+      }
+    },
+    {
+      "access": "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr3/level2/2026W29_2A/l2b-v27-2026-277/1/level2_2026W29_2A_0079_1D1_spx_l2b-v27-2026-277.fits?center=248.16722462232428,66.75502500314006&size=0.05",
+      "size_bytes": 3965760,
+      "sha256": "15fdae16a8a38419c8d44927dc1d01e7f148f50c973f430195c75d1cf782b6bc",
+      "epoch": "r-draconis-b",
+      "source": "NASA/IPAC IRSA SPHEREx",
+      "release": "QR3",
+      "observation_id": "2026W29_2A_0079_1",
+      "observation_start_mjd": 61237.870249444,
+      "observation_end_mjd": 61237.871581823,
+      "filename": "r-draconis-b.fits",
+      "calibration": "SPHEREx QR3 Level 2B v27",
+      "processing_history": [
+        "SPHEREx Level 2B calibration",
+        "IRSA cutout"
+      ],
+      "coverage": {
+        "ra": 248.16722462232428,
+        "dec": 66.75502500314006,
+        "fov": 0.05
+      },
+      "flags": "FLAGS extension. SOURCE (bit 21) is allowed. All other set bits are masked.",
+      "band": "SPHEREx-D1",
+      "detector": 1,
+      "spectral_wcs": "spherex-lvf",
+      "reject_flag_bits": 4292870143,
+      "full_image": {
+        "access": "https://nasa-irsa-spherex.s3.us-east-1.amazonaws.com/qr3/level2/2026W29_2A/l2b-v27-2026-277/1/level2_2026W29_2A_0079_1D1_spx_l2b-v27-2026-277.fits",
+        "size_bytes": 66015360,
+        "sha256": "ae5d03f7e5cf19ffd62958de0353b2c7d8c5e7ffaa8354e1b9b19041ceccfc7b"
+      }
+    }
+  ]
+}

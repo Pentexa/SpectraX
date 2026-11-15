@@ -28,13 +28,15 @@ def test_challenge_targets_have_epoch_positions_and_catalog_references(tmp_path)
     assert 9 < (later["barnard"]["dec"] - earlier["barnard"]["dec"]) * 3600 < 12
 
 
-def test_benchmark_reports_missing_files_and_unsupported_targets(tmp_path):
+def test_benchmark_reports_missing_files_for_each_challenge_target(tmp_path):
     with TestClient(create_app(MANIFEST, tmp_path)) as client:
-        response = client.get("/api/targets/wise-0855/benchmark")
-        assert response.status_code == 503
-        assert response.json()["error"]["details"]["epochs"] == ["wise-0855-a", "wise-0855-b"]
-        unsupported = client.get("/api/targets/barnard/benchmark")
-        assert unsupported.status_code == 404 and unsupported.json()["error"]["code"] == "benchmark_unavailable"
+        for target in client.get("/api/targets").json()["targets"]:
+            target_id = target["id"]
+            response = client.get(f"/api/targets/{target_id}/benchmark")
+            assert response.status_code == 503
+            assert response.json()["error"]["code"] == "benchmark_not_prepared"
+            assert response.json()["error"]["details"]["epochs"] == [f"{target_id}-a", f"{target_id}-b"]
+        assert client.get("/api/targets/unknown/benchmark").status_code == 404
         assert client.get("/api/targets/wise-0855/benchmark", params={"fov": 1}).status_code == 422
 
 

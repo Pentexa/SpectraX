@@ -250,7 +250,7 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
         target = get_target(target_id)
         records = api.state.benchmarks.get(target_id)
         if records is None:
-            raise DataError('benchmark_unavailable', 'No verified image pair is configured for this target', 404)
+            raise DataError('benchmark_unavailable', 'No image pair is configured for this target', 404)
         directory = data_dir / target_id
         missing = [record.epoch for record in records if not (directory / record.filename).is_file()]
         if missing:
