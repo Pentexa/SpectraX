@@ -55,6 +55,9 @@ npm ci
 npm run dev
 ```
 
+Development output is written to `.next-dev`, and production builds use
+`.next`. Run `npm run clean` with the dev server stopped to clear both.
+
 ## Backend integration
 
 Set `SPECTREX_API_URL` before building and starting Next.js. The default is
