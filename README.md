@@ -101,6 +101,6 @@ GitHub Actions runs the frontend checks and backend tests. On `main`, the backen
 
 ## Credits
 
-**Project team:** Ahmet Aras Akyasan, Mustafa Emir Yayla, Korhan Erol, and Nisanur Çakır.
+**Project team:** Ahmet Aras Akyasan, Mustafa Emir Yayla, Korhan Erol, and Nisanur Cakir.
 
 **AI assistance:** GPT SOL 6.1 supported coding. GLM 5.3 supported code review.

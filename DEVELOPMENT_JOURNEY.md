@@ -24,6 +24,6 @@ We brought the frontend and backend into one repository and added GitHub Actions
 
 ## Project team
 
-Ahmet Aras Akyasan, Mustafa Emir Yayla, Korhan Erol, and Nisanur Çakır.
+Ahmet Aras Akyasan, Mustafa Emir Yayla, Korhan Erol, and Nisanur Cakir.
 
 GPT SOL 6.1 supported coding. GLM 5.3 supported code review.

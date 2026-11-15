@@ -61,7 +61,7 @@ const dataSources = [
   },
 ];
 
-const team = ["Ahmet Aras Akyasan", "Mustafa Emir Yayla", "Korhan Erol", "Nisanur Çakır"];
+const team = ["Ahmet Aras Akyasan", "Mustafa Emir Yayla", "Korhan Erol", "Nisanur Cakir"];
 const aiCredits = [
   { role: "Coding assistance", model: "GPT SOL 6.1" },
   { role: "Code review assistance", model: "GLM 5.3" },

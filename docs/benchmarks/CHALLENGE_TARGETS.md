@@ -1,44 +1,44 @@
-# Planet X and SPHEREx hedef doğrulaması
+# Planet X and SPHEREx Target Validation
 
-15 Kasım 2026. Hedeflerin referans astrometrisi SIMBAD’dan alındı. FITS kesitleri, her gözlemin ortasındaki tahmini ICRS konumuna göre NASA/IPAC IRSA’dan indirildi. Sonuçlar gözlem seçimi ve kalite kontrolünü belgeleyen örneklerdir. Geçerli bir piksel, güvenilir dönemler arası değişim için tek başına yeterli değildir. [IRSA veri erişimi](https://irsa.ipac.caltech.edu/spherex-archive-documentation/spherex-data-access/)
+15 November 2026. We obtained reference astrometry for the targets from SIMBAD and downloaded FITS cutouts from NASA/IPAC IRSA centered on the predicted ICRS position at each observation midpoint. These examples document observation selection and quality checks. A reliable measurement of change across epochs requires more than a single valid pixel. [IRSA data access](https://irsa.ipac.caltech.edu/spherex-archive-documentation/spherex-data-access/)
 
-| Hedef | Örnek gerçek gözlemler | Sonuç |
+| Target | Example observations | Result |
 | --- | --- | --- |
-| Barnard Yıldızı | DR1 ve QR3, 13 D6 kesiti | Yıldız her kesitte kapsandı. En iyi kesitte 4/9 çekirdek pikseli geçerliydi. Özdevinim değeri boş. |
-| Epsilon Indi B | DR1 `2025W40_1A_0444_3/D6`, `2026W18_1A_0502_1/D6` | Birleşik kaynağın 210,43 günde 3,98″ doğu ve 1,38″ güney yönünde göreli kayması ölçüldü. Beş ortak referans kaynağı hizalamayı doğruladı. |
-| WISE 0855−0714 | DR1 `2025W46_1A_0238_1/D6`, `2026W17_1B_0227_4/D6` | 161,22 günde 5,13″ batı ve 1,71″ kuzey yönünde göreli kayma ölçüldü. Altı ortak referans kaynağı hizalamayı doğruladı. |
-| RW Aurigae | DR1 `2025W36_1A_0095_1/D1`, `2026W10_1A_0445_1/D1`, `2026W11_1A_0285_4/D1` | İlk tek kaynak uyumu yüksek artık verdi. Sonraki gözlemlerde çekirdek maskesi veya eksik varyans ölçümü engelledi. Güvenilir akı farkı döndürülmedi. |
-| R Draconis | DR1 `2025W23_2B_0130_1/D6`, `2026W01_1A_0534_3/D6` | Her iki FITS okundu. Kalite bayrakları veya eksik varyans kaynak uyumuna engel oldu. |
+| Barnard's Star | 13 D6 cutouts from DR1 and QR3 | Every cutout covered the star. The best cutout had 4 of 9 valid core pixels. This sample did not yield a proper-motion measurement. |
+| Epsilon Indi B | DR1 `2025W40_1A_0444_3/D6`, `2026W18_1A_0502_1/D6` | The blended source shifted 3.98″ east and 1.38″ south over 210.43 days. Five common reference sources verified registration. |
+| WISE 0855−0714 | DR1 `2025W46_1A_0238_1/D6`, `2026W17_1B_0227_4/D6` | We measured a relative displacement of 5.13″ west and 1.71″ north over 161.22 days. Six common reference sources verified registration. |
+| RW Aurigae | DR1 `2025W36_1A_0095_1/D1`, `2026W10_1A_0445_1/D1`, `2026W11_1A_0285_4/D1` | The initial single-source fit had large residuals. In later observations, core masking or missing variance prevented a measurement. This sample did not yield a reliable flux difference. |
+| R Draconis | DR1 `2025W23_2B_0130_1/D6`, `2026W01_1A_0534_3/D6` | Both FITS files were readable. Quality flags or missing variance prevented a source fit. |
 
-Epsilon Indi Ba ve Bb’nin yayımlanmış açısal ayrımı yaklaşık 0,73″. SPHEREx tayfsal görüntülerinin yaklaşık 6″ piksel ölçeğinde bu örneğin iki ayrı bileşen olarak yorumlanması desteklenmiyor. [Epsilon Indi gözlemi](https://arxiv.org/abs/astro-ph/0309256) · [SPHEREx veri ürünü](https://irsa.ipac.caltech.edu/spherex-archive-documentation/spherex-data-products/)
+The published angular separation of Epsilon Indi Ba and Bb is about 0.73″. SPHEREx spectral images have a pixel scale of about 6″, so the pair appears blended in this sample. [Epsilon Indi observation](https://arxiv.org/abs/astro-ph/0309256) · [SPHEREx data products](https://irsa.ipac.caltech.edu/spherex-archive-documentation/spherex-data-products/)
 
-RW Aurigae için 1,31 µm arşiv filtresiyle iki DR1 zaman penceresinde on D2 ziyaretini daha denedik. İndirilebilen dört kesit kaynak uyumu için gereken piksel kalite koşullarını karşılamadı. Diğer altı kesit için arşiv isteği tamamlanamadı.
+We tested ten more D2 visits across two DR1 time windows for RW Aurigae using a 1.31 µm archive filter. The four cutouts we retrieved failed the pixel-quality criteria for source fitting. The archive request failed for the other six cutouts.
 
-Sonuçları tekrar üretmek için `GET /api/targets/{target_id}/observations` ile kayıtları ve tahmini konumları al. Her arşiv kimliği için `POST /api/archive/import` çağrısında ilgili gözlemin tahmini konumunu ve `fov: 0.05` değerini kullan. Dönen epoch değerlerini ve `target_id` alanını `POST /api/source-series` çağrısına gönder. `predicted_catalog_offset_arcsec` katalog tahminidir. `light_curves[].change` yalnızca uyumlu ve yeterli kalitedeki akı ölçümleri için hesaplanır. [Barnard piksel denetimi](BARNARDS_STAR.md)
+To reproduce the results, use `GET /api/targets/{target_id}/observations` to retrieve records and predicted positions. For each archive ID, send the predicted position for that observation and `fov: 0.05` to `POST /api/archive/import`. Send the returned epoch IDs and `target_id` to `POST /api/source-series`. The `predicted_catalog_offset_arcsec` field reports the catalog prediction. The API computes `light_curves[].change` only from compatible flux measurements that pass the quality checks. [Barnard pixel audit](BARNARDS_STAR.md)
 
-## Uygulamada açılan hedef çiftleri
+## Target pairs available in the app
 
-`planet-x-data --include-benchmarks` beş hedefin FITS dosyalarını SHA-256 doğrulamasıyla hazırlar. Her hazır zaman çizelgesi üç gerçek gözlem içerir. `GET /api/targets/{target_id}/benchmark` ölçüm çiftini, `POST /api/timeline` tarih sıralı görüntü dizisini ortak WCS ile döndürür.
+`planet-x-data --include-benchmarks` prepares FITS files for all five targets and verifies their SHA-256 checksums. Each prepared timeline contains three real observations. `GET /api/targets/{target_id}/benchmark` returns the comparison pair. `POST /api/timeline` returns observations in chronological order on a common WCS.
 
-| Hedef | Uygulamada açılan IRSA gözlemleri | SPHEREx ölçüm durumu |
+| Target | IRSA observations shown in the app | SPHEREx measurement |
 | --- | --- | --- |
-| Barnard Yıldızı | DR1 `2025W35_1A_0484_2/D6`, `2026W19_1A_0403_1/D6` | 250,6 günde yaklaşık 0,75″ doğu ve 7,13″ kuzey. Ölçüm maskesiz kanatlara ve 17 ortak referans yıldızına dayanıyor. |
-| RW Aurigae | DR1 `2026W11_1A_0285_1/D1`, QR3 `2026W37_1A_0234_3/D1` | 181,84 günde yaklaşık 0,77 µm'de açıklık akısı 131,0 mJy'den 200,5 mJy'ye çıktı. |
-| R Draconis | DR1 `2025W29_1A_0141_4/D1`, QR3 `2026W28_2A_0364_4/D1` | 361,65 günde yaklaşık 0,78 µm'de maskesiz dış halkalar sönükleşti. Çekirdek iki pozda da doyumlu. |
+| Barnard's Star | DR1 `2025W35_1A_0484_2/D6`, `2026W19_1A_0403_1/D6` | About 0.75″ east and 7.13″ north over 250.6 days. The measurement uses unmasked wings and 17 common reference stars. |
+| RW Aurigae | DR1 `2026W11_1A_0285_1/D1`, QR3 `2026W37_1A_0234_3/D1` | Aperture flux rose from 131.0 to 200.5 mJy at about 0.77 µm over 181.84 days. |
+| R Draconis | DR1 `2025W29_1A_0141_4/D1`, QR3 `2026W28_2A_0364_4/D1` | The unmasked outer rings dimmed at about 0.78 µm over 361.65 days. The core was saturated in both exposures. |
 
-RW Aurigae için 2 ve 2,5 piksellik açıklıklarla yerel arka plan çıkarıldı ve ePSF ile açıklık düzeltmesi uygulandı. İki yarıçap sırasıyla +69,5 ve +68,9 mJy fark verdi. İlk sonucun yaklaşık 12,0 mJy belirsizliği FITS varyansını, arka plan gürültüsünü ve her gözlem için varsayılan %5 bağımsız sistematik payı içeriyor. Yıldız sisteminin birleşik ışığı ölçüldü.
+For RW Aurigae, we subtracted the local background using apertures of 2 and 2.5 pixels in radius and applied an ePSF aperture correction. The two radii yielded flux differences of +69.5 and +68.9 mJy, respectively. The approximately 12.0 mJy uncertainty on the first result includes FITS variance, background noise, and an assumed independent 5% systematic allowance per observation. The measurement represents the combined light of the star system.
 
-R Draconis için iki görüntü ortak WCS'ye taşındı. Eşleşen dalga boyu ve kalite maskesini geçen piksellerde arka plan çıkarıldı. 25–37″ halkasının medyan yüzey parlaklığı 2,69'dan 1,11 MJy/sr'ye, 37–49″ halkasınınki 0,99'dan 0,45 MJy/sr'ye indi. İki halkanın dört sektöründe de değişim aynı yöndeydi. `2025W29_1A_0141_3/D1` ve `2026W28_2A_0364_3/D1` çiftinde yaklaşık 0,762 µm'de de aynı yönde değişim görüldü. Bu ölçüm doyum dışındaki kanatların yüzey parlaklığını veriyor. [IRSA veri ürünleri ve bayraklar](https://irsa.ipac.caltech.edu/data/SPHEREx/docs/SPHEREx_Expsupp.pdf)
+For R Draconis, we aligned the two images on a common WCS and subtracted the background from pixels that passed the wavelength and quality checks. Median surface brightness fell from 2.69 to 1.11 MJy/sr in the 25–37″ ring and from 0.99 to 0.45 MJy/sr in the 37–49″ ring. All four sectors in both rings changed in the same direction. The pair `2025W29_1A_0141_3/D1` and `2026W28_2A_0364_3/D1` showed the same trend at approximately 0.762 µm. The measurement describes the surface brightness of the wings outside the saturated core. [IRSA data products and flags](https://irsa.ipac.caltech.edu/data/SPHEREx/docs/SPHEREx_Expsupp.pdf)
 
-Aday pozların kimlikleri yayımlanmış SIA listelerinden tarandı. FITS dosyaları IRSA'dan indirildi ve buradaki ölçümler bu dosyalardan yeniden hesaplandı. [SIA sonuçlarının kaydı](https://github.com/FearmessOp/blackhole-spherex/tree/main/data/sia)
+We identified candidate exposures in published SIA result lists, downloaded the FITS files from IRSA, and recalculated the measurements from those files. [Archived SIA results](https://github.com/FearmessOp/blackhole-spherex/tree/main/data/sia)
 
 ## WISE 0855 hareket testi
 
-15 Kasım 2026. 0,20° FITS kesitleri ve 0,18° hizalama alanı kullanıldı. Ölçümde eksen başına belirsizlik yaklaşık 1,23″ ve 1,29″. İki boyutlu Mahalanobis uzaklığı 4,51. Aynı ilk gözlem, farklı bir ikinci ziyaret olan `2026W17_1B_0507_3/D6` ile karşılaştırıldığında sekiz referans kaynağıyla 5,30″ batı ve 1,52″ kuzey yönünde kayma ölçüldü. İlk ve ikinci gözlemlerin yerel dalga boyları farklı olduğundan bu sonuç astrometriyi doğrular. Parlaklık değişimi bu gözlemlerden hesaplanmadı.
+15 November 2026. We used 0.20° FITS cutouts and a 0.18° registration field. The uncertainties along the two axes are approximately 1.23″ and 1.29″. The two-dimensional Mahalanobis distance is 4.51. Comparing the same first observation with a different second visit, `2026W17_1B_0507_3/D6`, yielded a shift of 5.30″ west and 1.52″ north using eight reference sources. The local wavelengths differ between the two observations, so this result supports the astrometry. We did not compute a brightness change from these observations.
 
-Kesit servisi erişilemezse indirme aracı IRSA’nın AWS aynasındaki tam FITS dosyalarını kullanır. İki tam görüntüde ek bir ortak referans bulundu. Bu görüntülerden ölçülen kayma 5,34″ batı ve 1,62″ kuzey yönünde. [IRSA arşiv erişimi](https://irsa.ipac.caltech.edu/spherex-archive-documentation/spherex-data-access/)
+If the cutout service is unavailable, the download tool uses full FITS files from the IRSA AWS mirror. The full images yielded one additional common reference source. We measured 5.34″ west and 1.62″ north from these images. [IRSA archive access](https://irsa.ipac.caltech.edu/spherex-archive-documentation/spherex-data-access/)
 
-SHA-256 değerleri sabitlenmiş iki FITS dosyasıyla testi yeniden çalıştır.
+Run the test again with the two FITS files pinned by SHA-256.
 
 ```powershell
 $env:PLANET_X_MANIFEST = 'data/manifests/spherex-wise-0855.json'
@@ -47,24 +47,24 @@ $env:PLANET_X_DATA_DIR = 'data/samples/wise-0855'
 .\.venv\Scripts\planet-x-api.exe
 ```
 
-API çalışırken ayrı bir terminalden `python scripts/smoke_backend.py --wise-0855` komutunu çalıştır. Frontend için aşağıdaki DR1 kimliklerini ve kesit merkezlerini `/api/archive/import` çağrısında kullan. Dönen iki epoch kimliğini `target_id=wise-0855` ve `fov=0.18` ile `POST /api/astrometry` çağrısına gönder.
+With the API running, run `python scripts/smoke_backend.py --wise-0855` in another terminal. To load the same observations in the frontend, submit the DR1 IDs and cutout centers below to `/api/archive/import`. Send the two returned epoch IDs to `POST /api/astrometry` with `target_id=wise-0855` and `fov=0.18`.
 
-| Arşiv kaydı | RA | Dec | Kesit genişliği |
+| Archive record | RA | Dec | Cutout width |
 | --- | ---: | ---: | ---: |
 | `ivo://irsa.ipac/spherex_dr1?2025W46_1A_0238_1/D6` | 133.76019838679107° | −7.242244305443577° | 0.20° |
 | `ivo://irsa.ipac/spherex_dr1?2026W17_1B_0227_4/D6` | 133.7589615748621° | −7.2421046267988975° | 0.20° |
 
-## Epsilon Indi B hareket testi
+## Epsilon Indi B motion test
 
-15 Kasım 2026. `target_id=epsilon-indi-b` ve 0,20° hizalama alanıyla eksen başına yaklaşık 1,10″ belirsizlik hesaplandı. İki boyutlu Mahalanobis uzaklığı 3,81. Konum uyumu birleşik kaynağın ışık merkezini verir. Doğrulanan DR1 D6 kesitleri ve SHA-256 değerleri aşağıda.
+15 November 2026. With `target_id=epsilon-indi-b` and a 0.20° registration field, the uncertainty was approximately 1.10″ per axis. The two-dimensional Mahalanobis distance was 3.81. The position fit gives the photocenter of the blended source. The table lists the verified DR1 D6 cutouts and their SHA-256 checksums.
 
-| Arşiv kaydı | RA | Dec | SHA-256 |
+| Archive record | RA | Dec | SHA-256 |
 | --- | ---: | ---: | --- |
 | `ivo://irsa.ipac/spherex_dr1?2025W40_1A_0444_3/D6` | 331.0960799055985° | −56.800529751506424° | `f0282210706193bf9e4e0c2b902d1ed846bd2d52d4ad2424652030996de18583` |
 | `ivo://irsa.ipac/spherex_dr1?2026W18_1A_0502_1/D6` | 331.09744651228624° | −56.800835052161254° | `464ce879ef80db459bab4a94ee246bb7c57de0a9f470e597f3813e4bd78c770f` |
 
-## Doyum ve optik referans
+## Saturation and optical reference
 
-Barnard Yıldızı için ek DR1 kesitlerinde de 3 × 3 çekirdek bölgesi maskeli kaldı. Önceki 13 kesitte maskesiz PSF kanatlarının model uyumu indirgenmiş χ² 149–652 aralığında kaldı. R Draconis'in ek DR1 ve QR3 D1/D2 kesitlerinde kullanılabilir çekirdek pikseli 0/9 idi. RW Aurigae'nin bazı kesitlerinde doyuma yaklaşan piksel, çekirdeği geçerli bir D1 kesitinde ise yüksek model artığı görüldü. Bu sınamalar SPHEREx hareketi veya akı farkı üretmedi. [IRSA piksel bayrakları](https://irsa.ipac.caltech.edu/onlinehelp/spherex/spherex/sp.html#notes-on-spherex-photometry-flags)
+The 3 × 3 core around Barnard's Star remained masked in additional DR1 cutouts. Fits to the unmasked PSF wings in the earlier 13 cutouts yielded reduced χ² values of 149–652. Additional DR1 and QR3 D1/D2 cutouts of R Draconis had 0 of 9 usable core pixels. Some RW Aurigae cutouts had a pixel near saturation. A D1 cutout with a valid core yielded large model residuals. These tests did not yield a SPHEREx motion or flux difference. [IRSA pixel flags](https://irsa.ipac.caltech.edu/onlinehelp/spherex/spherex/sp.html#notes-on-spherex-photometry-flags)
 
-R Draconis için AAVSO'nun görsel gözlemlerinde MJD 61180–61208 arasında 20 geçerli ölçümün medyanı 12,65 kadir, MJD 61292–61306 arasında 11 ölçümün medyanı 7,50 kadir. Yaklaşık 5,15 kadirlik fark optik referans eğrisinde görülebilir. `GET /api/targets/r-draconis/reference-light-curve?start_mjd=61180&end_mjd=61308&limit=129` çağrısı gözlemci kodları ve kaynak bilgileriyle gerçek gözlemleri döndürür. Fotometriyi AAVSO gözlemcileri sağladı. [AAVSO veri arşivi](https://aavso.org/search-and-download-data/)
+In the AAVSO visual observations of R Draconis, 20 valid measurements over MJD 61180–61208 had a median magnitude of 12.65, and 11 measurements over MJD 61292–61306 had a median magnitude of 7.50. The difference of about 5.15 magnitudes is visible in the optical reference curve. `GET /api/targets/r-draconis/reference-light-curve?start_mjd=61180&end_mjd=61308&limit=129` returns the observations with observer codes and provenance. The photometry was contributed by AAVSO observers. [AAVSO data archive](https://aavso.org/search-and-download-data/)
