@@ -148,7 +148,7 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
   ], [gaia.data, wise.data]);
 
   function share(embed: boolean) {
-    const url = new URL(embed ? "/embed" : "/", window.location.origin);
+    const url = new URL(embed ? "/embed" : "/atlas", window.location.origin);
     if (targetId) url.searchParams.set("target", targetId);
     url.searchParams.set("ra", field.ra.toFixed(7));
     url.searchParams.set("dec", field.dec.toFixed(7));

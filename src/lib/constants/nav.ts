@@ -1,5 +1,5 @@
 export const NAV_SECTIONS = [
-  { id: "map", href: "/", label: "ALL-SKY ATLAS" },
+  { id: "map", href: "/atlas", label: "ALL-SKY ATLAS" },
   { id: "spectral", href: "/spectral", label: "SPECTRAL EXPLORER" },
   { id: "research", href: "/research", label: "RESEARCH" },
   { id: "about", href: "/about", label: "ABOUT" },

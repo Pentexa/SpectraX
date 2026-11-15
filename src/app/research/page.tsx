@@ -37,7 +37,7 @@ export default function ResearchPage() {
               {group.targets.map((target) => (
                 <li key={target.id} className="py-3 last:pb-0">
                   <Link className="inline-flex items-center gap-2 text-[14px] font-medium text-cyan-bright hover:underline"
-                    href={{ pathname: "/", query: { target: target.id, view: "images" } }}>
+                    href={{ pathname: "/atlas", query: { target: target.id, view: "images" } }}>
                     {target.name} <span aria-hidden="true">↗</span>
                   </Link>
                   <p className={`mt-1 ${sectionCopy}`}>{target.description}</p>

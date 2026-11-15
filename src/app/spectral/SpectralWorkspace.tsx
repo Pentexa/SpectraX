@@ -48,7 +48,7 @@ export function SpectralWorkspace({ initialField }: { initialField: SkyField }) 
         <p className={sectionCopy}>
           The chart shows surface brightness at the selected sky pixel in a multi-epoch mosaic. Select a channel for its image and quality flags, or choose a detector mean to combine its 17 channels.
         </p>
-        <Link className={`mt-4 ${sectionLink}`} href={{ pathname: "/", query: { ...field, view: "atlas" } }}>
+        <Link className={`mt-4 ${sectionLink}`} href={{ pathname: "/atlas", query: { ...field, view: "atlas" } }}>
           Open field in atlas <span aria-hidden="true" className="ml-2">↗</span>
         </Link>
       </section>

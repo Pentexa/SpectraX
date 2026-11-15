@@ -10,7 +10,8 @@ on **Next.js (App Router) + TypeScript + Tailwind CSS v4**.
 src/
 ├── app/                    # Next.js App Router (layout, page, globals.css)
 │   ├── layout.tsx          # Root layout: fonts (next/font), metadata
-│   ├── page.tsx            # Server component → Dashboard
+│   ├── page.tsx            # Panorama landing page
+│   ├── atlas/page.tsx      # Dashboard and all-sky atlas
 │   └── globals.css         # Tailwind v4 @theme tokens
 ├── components/
 │   ├── layout/             # SiteHeader, SiteFooter, SectionPage
@@ -75,6 +76,10 @@ missing channels and can show the selected channel as a sky image. Source
 photometry from individual visits is displayed separately, as are AAVSO
 optical reference curves for the two variable targets. Gaia DR3 and AllWISE
 can be projected onto the image grid or the Aladin atlas.
+
+The home page uses NASA/JPL-Caltech’s [SPHEREx all-sky panorama](https://www.jpl.nasa.gov/images/pia26600-spherexs-first-all-sky-map/).
+Open the dashboard at `/atlas`. Previous atlas links with coordinates or
+view settings still open the corresponding dashboard view.
 
 The top bar also links to `/spectral`, a dedicated spectrum workspace with
 shareable coordinates, and to `/research`, `/about`, and `/contact`.

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { NAV_SECTIONS, type NavSectionId } from "@/lib/constants/nav";
 
 interface SiteHeaderProps {
-  activeSection: NavSectionId;
+  activeSection?: NavSectionId;
   onOpenAtlas?: () => void;
   spectralHref?: string;
   dataSource?: "loading" | "api" | "mock" | "offline";
@@ -48,7 +48,7 @@ export function SiteHeader({ activeSection, onOpenAtlas, spectralHref, dataSourc
   return (
     <header className="relative flex h-[62px] flex-shrink-0 items-center justify-between gap-3 border-b border-border-subtle bg-gradient-to-b from-[#0f161f] to-[#0c1219] px-4 sm:px-[22px]">
       <div className="flex items-center gap-3.5">
-        <Link href="/" className="text-[19px] font-semibold leading-tight tracking-[0.36em] text-[#eef4fa]">
+        <Link href="/" aria-current={activeSection ? undefined : "page"} className="text-[19px] font-semibold leading-tight tracking-[0.36em] text-[#eef4fa]">
           SPECTREX
         </Link>
         {dataSource === "mock" && (
