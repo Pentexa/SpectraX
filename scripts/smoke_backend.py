@@ -233,7 +233,22 @@ def verify_benchmarks(base_url: str):
             require(len(photometry["samples"]) == 2, f"Missing photometry diagnostics for {target}")
             require(all(curve["change"] is None for curve in photometry["light_curves"]),
                     f"An insufficient-quality pair reported a flux change for {target}")
-            print(f"{target} images and FITS photometry diagnostics verified")
+            if target == "rw-aurigae":
+                aperture = photometry["aperture_change"]
+                require(aperture is not None and photometry["wing_change"] is None, "Missing RW Aurigae aperture change")
+                change = aperture["measurement"]
+                require(math.isclose(change["change_ujy"], 69508, abs_tol=2000) and change["snr"] > 5,
+                        "Unexpected RW Aurigae aperture change")
+                require(aperture["radius_check"]["snr"] > 5, "RW Aurigae aperture check failed")
+                print(f"RW Aurigae aperture flux change verified: {change['change_ujy'] / 1000:.1f} mJy")
+            else:
+                wings = photometry["wing_change"]
+                require(photometry["aperture_change"] is None and wings is not None, "Missing R Draconis wings")
+                require(all(sample["error"]["details"]["core_pixels_usable"] == 0 for sample in photometry["samples"]),
+                        "R Draconis saturation diagnostics are missing")
+                require(len(wings["rings"]) == 2 and all(ring["change_mjy_sr"] < -0.4 for ring in wings["rings"]),
+                        "Unexpected R Draconis wing brightness changes")
+                print("R Draconis dimming verified in two unmasked annuli")
 
 
 if __name__ == "__main__":

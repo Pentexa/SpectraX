@@ -23,8 +23,14 @@ Sonuçları tekrar üretmek için `GET /api/targets/{target_id}/observations` il
 | Hedef | Uygulamada açılan IRSA gözlemleri | SPHEREx ölçüm durumu |
 | --- | --- | --- |
 | Barnard Yıldızı | DR1 `2025W35_1A_0484_2/D6`, `2026W19_1A_0403_1/D6` | 250,6 gün arayla yaklaşık 4,89 µm. Çekirdek maskeleri hareket ölçümünü engelliyor. |
-| RW Aurigae | DR1 `2025W36_1A_0095_1/D1`, QR3 `2026W37_1A_0234_2/D1` | Yaklaşık 1,068 ve 0,754 µm. İki ePSF uyumunda da yüksek artık var. Aynı bantta güvenilir parlaklık farkı yok. |
-| R Draconis | DR1 `2025W30_1B_0289_1/D1`, QR3 `2026W29_2A_0079_1/D1` | 359,3 gün arayla yaklaşık 1,071 µm. İki gözlemde de çekirdek maskeli. |
+| RW Aurigae | DR1 `2026W11_1A_0285_1/D1`, QR3 `2026W37_1A_0234_3/D1` | 181,84 günde yaklaşık 0,77 µm'de açıklık akısı 131,0 mJy'den 200,5 mJy'ye çıktı. |
+| R Draconis | DR1 `2025W29_1A_0141_4/D1`, QR3 `2026W28_2A_0364_4/D1` | 361,65 günde yaklaşık 0,78 µm'de maskesiz dış halkalar sönükleşti. Çekirdek iki pozda da doyumlu. |
+
+RW Aurigae için 2 ve 2,5 piksellik açıklıklarla yerel arka plan çıkarıldı ve ePSF ile açıklık düzeltmesi uygulandı. İki yarıçap sırasıyla +69,5 ve +68,9 mJy fark verdi. İlk sonucun yaklaşık 12,0 mJy belirsizliği FITS varyansını, arka plan gürültüsünü ve her gözlem için varsayılan %5 bağımsız sistematik payı içeriyor. Yıldız sisteminin birleşik ışığı ölçüldü.
+
+R Draconis için iki görüntü ortak WCS'ye taşındı. Eşleşen dalga boyu ve kalite maskesini geçen piksellerde arka plan çıkarıldı. 25–37″ halkasının medyan yüzey parlaklığı 2,69'dan 1,11 MJy/sr'ye, 37–49″ halkasınınki 0,99'dan 0,45 MJy/sr'ye indi. İki halkanın dört sektöründe de değişim aynı yöndeydi. `2025W29_1A_0141_3/D1` ve `2026W28_2A_0364_3/D1` çiftinde yaklaşık 0,762 µm'de de aynı yönde değişim görüldü. Bu ölçüm doyum dışındaki kanatların yüzey parlaklığını veriyor. [IRSA veri ürünleri ve bayraklar](https://irsa.ipac.caltech.edu/data/SPHEREx/docs/SPHEREx_Expsupp.pdf)
+
+Aday pozların kimlikleri yayımlanmış SIA listelerinden tarandı. FITS dosyaları IRSA'dan indirildi ve buradaki ölçümler bu dosyalardan yeniden hesaplandı. [SIA sonuçlarının kaydı](https://github.com/FearmessOp/blackhole-spherex/tree/main/data/sia)
 
 ## WISE 0855 hareket testi
 

@@ -2,15 +2,15 @@
   "schema_version": 1,
   "observations": [
     {
-      "access": "https://irsa.ipac.caltech.edu/ibe/data/spherex/dr1/level2/2025W36_1A/l2b-v27-2026-232/1/level2_2025W36_1A_0095_1D1_spx_l2b-v27-2026-232.fits?center=76.95659071490178,30.401293511943553&size=0.05",
+      "access": "https://irsa.ipac.caltech.edu/ibe/data/spherex/dr1/level2/2026W11_1A/l2b-v27-2026-232/1/level2_2026W11_1A_0285_1D1_spx_l2b-v27-2026-232.fits?center=76.95658209427211,30.401289891500152&size=0.05",
       "size_bytes": 3965760,
-      "sha256": "26c73fae5004db5b47d226f598e3c132540bc6f8f3e73fc9667c80c1f17a9784",
+      "sha256": "25dffb6457076e3a5e30bdb792ddd9b0493178dbbf02e7f5b0fb14752a3eff7f",
       "epoch": "rw-aurigae-a",
       "source": "NASA/IPAC IRSA SPHEREx",
       "release": "DR1",
-      "observation_id": "2025W36_1A_0095_1",
-      "observation_start_mjd": 60919.419646597,
-      "observation_end_mjd": 60919.420978976,
+      "observation_id": "2026W11_1A_0285_1",
+      "observation_start_mjd": 61109.439412,
+      "observation_end_mjd": 61109.440744,
       "filename": "rw-aurigae-a.fits",
       "calibration": "SPHEREx DR1 Level 2B v27",
       "processing_history": [
@@ -18,8 +18,8 @@
         "IRSA cutout"
       ],
       "coverage": {
-        "ra": 76.95659071490178,
-        "dec": 30.401293511943553,
+        "ra": 76.95658209427211,
+        "dec": 30.401289891500152,
         "fov": 0.05
       },
       "flags": "FLAGS extension. SOURCE (bit 21) is allowed. All other set bits are masked.",
@@ -28,21 +28,21 @@
       "spectral_wcs": "spherex-lvf",
       "reject_flag_bits": 4292870143,
       "full_image": {
-        "access": "https://nasa-irsa-spherex.s3.us-east-1.amazonaws.com/dr1/level2/2025W36_1A/l2b-v27-2026-232/1/level2_2025W36_1A_0095_1D1_spx_l2b-v27-2026-232.fits",
-        "size_bytes": 65612160,
-        "sha256": "7dae1a292603aa261d4994f12439c26f1958e61861128022fea3e118aacdd072"
+        "access": "https://nasa-irsa-spherex.s3.us-east-1.amazonaws.com/dr1/level2/2026W11_1A/l2b-v27-2026-232/1/level2_2026W11_1A_0285_1D1_spx_l2b-v27-2026-232.fits",
+        "size_bytes": 64897920,
+        "sha256": "ec0cae9c88a833719e1c152deeecaa5e11726ab68503e43231f1db39fcd18145"
       }
     },
     {
-      "access": "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr3/level2/2026W37_1A/l2b-v27-2026-255/1/level2_2026W37_1A_0234_2D1_spx_l2b-v27-2026-255.fits?center=76.9565931471711,30.401287830786593&size=0.05",
+      "access": "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr3/level2/2026W37_1A/l2b-v27-2026-255/1/level2_2026W37_1A_0234_3D1_spx_l2b-v27-2026-255.fits?center=76.95659314718482,30.401287830778106&size=0.05",
       "size_bytes": 3965760,
-      "sha256": "8599abf8918249bf492e44b9c87ec65b4a671134122a0640b0d6171da6407d93",
+      "sha256": "c76de79edb47ef5ac70f16ede1614e6e4f21553c0b0a257e0f0760bdd91f1efa",
       "epoch": "rw-aurigae-b",
       "source": "NASA/IPAC IRSA SPHEREx",
       "release": "QR3",
-      "observation_id": "2026W37_1A_0234_2",
-      "observation_start_mjd": 61291.275157986,
-      "observation_end_mjd": 61291.276490365,
+      "observation_id": "2026W37_1A_0234_3",
+      "observation_start_mjd": 61291.27665,
+      "observation_end_mjd": 61291.277983,
       "filename": "rw-aurigae-b.fits",
       "calibration": "SPHEREx QR3 Level 2B v27",
       "processing_history": [
@@ -50,8 +50,8 @@
         "IRSA cutout"
       ],
       "coverage": {
-        "ra": 76.9565931471711,
-        "dec": 30.401287830786593,
+        "ra": 76.95659314718482,
+        "dec": 30.401287830778106,
         "fov": 0.05
       },
       "flags": "FLAGS extension. SOURCE (bit 21) is allowed. All other set bits are masked.",
@@ -60,9 +60,9 @@
       "spectral_wcs": "spherex-lvf",
       "reject_flag_bits": 4292870143,
       "full_image": {
-        "access": "https://nasa-irsa-spherex.s3.us-east-1.amazonaws.com/qr3/level2/2026W37_1A/l2b-v27-2026-255/1/level2_2026W37_1A_0234_2D1_spx_l2b-v27-2026-255.fits",
-        "size_bytes": 65764800,
-        "sha256": "ef0c58b4fc7b51fb549385a47e139e58a7c996dc8c46ea8ec4b48f70e8b29341"
+        "access": "https://nasa-irsa-spherex.s3.us-east-1.amazonaws.com/qr3/level2/2026W37_1A/l2b-v27-2026-255/1/level2_2026W37_1A_0234_3D1_spx_l2b-v27-2026-255.fits",
+        "size_bytes": 65859840,
+        "sha256": "97ebddc8568b6cebfd06830bc9c7a988d00c0ebe01f54595a79768bc6ceb72c8"
       }
     }
   ]
