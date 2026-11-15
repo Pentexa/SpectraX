@@ -6,7 +6,7 @@ import { SiteFooter } from "@/components/layout/SiteFooter";
 import { InfoModal } from "@/components/layout/InfoModal";
 import { createAnimationClock } from "@/hooks/useAnimationClock";
 import { useScienceRequest } from "@/hooks/useScienceRequest";
-import { archiveCutoutWidth, scienceApi, type ArchiveCutout, type ArchivePair, type ComparisonMode, type EpochPair, type SkyField } from "@/lib/api/science";
+import { archiveCutoutWidth, MAX_TIMELINE_EPOCHS, scienceApi, type ArchiveCutout, type ComparisonMode, type EpochPair, type SkyField } from "@/lib/api/science";
 import { useDashboardStore } from "@/store/dashboardStore";
 import { StarList } from "./left/StarList";
 import { AllSkyAtlas } from "./center/AllSkyAtlas";
@@ -18,18 +18,22 @@ import { ReferencePanel } from "./science/ReferencePanel";
 import { SourcePanel } from "./science/SourcePanel";
 import { ReleasePanel } from "./science/ReleasePanel";
 import { SpectrumPanel } from "./science/SpectrumPanel";
+import { TimelinePanel } from "./science/TimelinePanel";
 
 const modes = new Set<ComparisonMode>(["side_by_side", "difference", "sum", "stack"]);
 const isEpoch = (value: string | null): value is string => /^[A-Za-z0-9_.-]{1,80}$/.test(value ?? "");
 const archiveId = /^ivo:\/\/irsa\.ipac\/spherex_(dr1|qr3)\?[A-Za-z0-9_]{1,50}\/D[1-6]$/;
+const archiveKeys = "abcdefgh".slice(0, MAX_TIMELINE_EPOCHS).split("");
 
-function readCutout(params: URLSearchParams, epoch: "a" | "b"): ArchiveCutout | null {
+function readCutout(params: URLSearchParams, epoch: string): ArchiveCutout | null {
   const id = params.get(`archive_${epoch}`);
   const ra = params.get(`ra_${epoch}`);
   const dec = params.get(`dec_${epoch}`);
   if (!id || !archiveId.test(id) || !ra || !dec ||
     !(Number(ra) >= 0 && Number(ra) < 360 && Math.abs(Number(dec)) <= 90)) return null;
-  return { archive_id: id, predicted_position: { ra: Number(ra), dec: Number(dec) } };
+  const local = params.get(`local_${epoch}`);
+  return { archive_id: id, predicted_position: { ra: Number(ra), dec: Number(dec) },
+    local_epoch: isEpoch(local) ? local : undefined };
 }
 
 export function Dashboard({ embedded = false }: { embedded?: boolean }) {
@@ -46,12 +50,13 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
   const [fov, setFov] = useState(0.05);
   const [mode, setMode] = useState<ComparisonMode>("side_by_side");
   const [fixedPair, setFixedPair] = useState<EpochPair | null>(null);
-  const [archivePair, setArchivePair] = useState<{
-    observations: ArchivePair;
-    original?: { fov: number; epochs: EpochPair };
+  const [archiveSelection, setArchiveSelection] = useState<{
+    observations: ArchiveCutout[];
+    original?: { fov: number; epochs: string[] };
   } | null>(null);
   const [importAttempt, setImportAttempt] = useState(0);
   const [showAtlas, setShowAtlas] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(false);
   const [showGaia, setShowGaia] = useState(false);
   const [showWise, setShowWise] = useState(false);
 
@@ -71,15 +76,17 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
     const requestedMode = params.get("mode") as ComparisonMode | null;
     if (requestedMode && modes.has(requestedMode)) setMode(requestedMode);
     const first = params.get("epoch_a"), second = params.get("epoch_b");
-    const firstCutout = readCutout(params, "a"), secondCutout = readCutout(params, "b");
-    if (firstCutout && secondCutout && firstCutout.archive_id !== secondCutout.archive_id) {
-      setArchivePair({ observations: [firstCutout, secondCutout] });
+    const cutouts = archiveKeys.map((key) => readCutout(params, key)).filter((value) => value !== null);
+    const view = params.get("view");
+    if (cutouts.length >= 2 && new Set(cutouts.map((item) => item.archive_id)).size === cutouts.length) {
+      setArchiveSelection({ observations: cutouts });
     } else if (isEpoch(first) && isEpoch(second) && first !== second) {
       setFixedPair([first, second]);
     }
     setShowGaia(params.get("gaia") === "1");
     setShowWise(params.get("wise") === "1");
-    setShowAtlas(params.get("view") === "atlas");
+    setShowAtlas(view === "atlas");
+    setShowTimeline(view === "timeline" || (!view && cutouts.length > 2));
     void loadData();
   }, [loadData, selectTarget]);
 
@@ -88,25 +95,38 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
   const dec = coordinates?.dec ?? activeTarget?.dec ?? 4.7;
   const field = useMemo(() => ({ ra, dec, fov }), [ra, dec, fov]);
   const targetId = activeTarget?.id ?? null;
-  const clearPair = useCallback(() => { setFixedPair(null); setArchivePair(null); setMode("side_by_side"); }, []);
+  const clearSelection = useCallback(() => {
+    setFixedPair(null);
+    setArchiveSelection(null);
+    setMode("side_by_side");
+    setShowTimeline(false);
+  }, []);
   const handleTarget = useCallback((id: string) => {
     selectTarget(id);
     setCoordinates(null);
-    clearPair();
-  }, [clearPair, selectTarget]);
+    clearSelection();
+  }, [clearSelection, selectTarget]);
 
-  const loadArchive = useCallback((signal: AbortSignal) => scienceApi.importPair(archivePair!.observations, field, signal), [archivePair, field]);
-  const needsImport = archivePair && (!archivePair.original || archiveCutoutWidth(fov) > archivePair.original.fov);
+  const loadArchive = useCallback((signal: AbortSignal) => scienceApi.importExposures(archiveSelection!.observations, field, signal), [archiveSelection, field]);
+  const needsImport = archiveSelection && (!archiveSelection.original || archiveCutoutWidth(fov) > archiveSelection.original.fov);
   const imported = useScienceRequest(source === "api" && needsImport ? loadArchive : null, importAttempt);
-  const pair = archivePair ? needsImport ? imported.data : archivePair.original?.epochs ?? null : fixedPair;
+  const selected = archiveSelection ? needsImport ? imported.data : archiveSelection.original?.epochs ?? null : fixedPair;
+  const pair = useMemo<EpochPair | null>(() => selected && selected.length >= 2
+    ? [selected[0], selected[selected.length - 1]] : null, [selected]);
   const loadBenchmark = useCallback((signal: AbortSignal) => scienceApi.benchmark(targetId!, fov, signal), [targetId, fov]);
-  const benchmark = useScienceRequest(activeTarget?.benchmark_available && !fixedPair && !archivePair ? loadBenchmark : null);
+  const benchmark = useScienceRequest(activeTarget?.benchmark_available && !fixedPair && !archiveSelection ? loadBenchmark : null);
   const epochs = useMemo<EpochPair | null>(() => pair ?? (benchmark.data
     ? [benchmark.data.comparison.epochs.a.epoch, benchmark.data.comparison.epochs.b.epoch] : null), [benchmark.data, pair]);
+  const timelineEpochs = selected && selected.length > 2 ? selected
+    : !fixedPair && !archiveSelection ? activeTarget?.timeline_epochs : undefined;
+  const timelineAvailable = Boolean(timelineEpochs && timelineEpochs.length >= 3);
+  const showTimelinePanel = showTimeline && (timelineAvailable || Boolean(archiveSelection && archiveSelection.observations.length > 2));
+  const loadTimeline = useCallback((signal: AbortSignal) => scienceApi.timeline(field, timelineEpochs!, signal), [field, timelineEpochs]);
+  const timeline = useScienceRequest(showTimelinePanel && !showAtlas && timelineAvailable ? loadTimeline : null);
   const loadComparison = useCallback((signal: AbortSignal) => scienceApi.compare(field, epochs!, mode, signal), [field, epochs, mode]);
-  const comparison = useScienceRequest(epochs && (pair || mode !== "side_by_side") ? loadComparison : null);
+  const comparison = useScienceRequest(epochs && !showTimelinePanel && (pair || mode !== "side_by_side") ? loadComparison : null);
   const loadAstrometry = useCallback((signal: AbortSignal) => scienceApi.astrometry(targetId, field, pair!, signal), [targetId, field, pair]);
-  const astrometry = useScienceRequest(pair ? loadAstrometry : null);
+  const astrometry = useScienceRequest(pair && !showTimelinePanel ? loadAstrometry : null);
 
   const loadGaia = useCallback((signal: AbortSignal) => scienceApi.overlay("gaia", field, signal), [field]);
   const loadWise = useCallback((signal: AbortSignal) => scienceApi.overlay("wise", field, signal), [field]);
@@ -124,13 +144,14 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
     url.searchParams.set("dec", field.dec.toFixed(7));
     url.searchParams.set("fov", String(fov));
     url.searchParams.set("mode", mode);
-    if (archivePair) {
-      (["a", "b"] as const).forEach((key, index) => {
-        const observation = archivePair.observations[index];
+    if (archiveSelection) {
+      archiveSelection.observations.forEach((observation, index) => {
+        const key = archiveKeys[index];
         const position = observation.predicted_position ?? field;
         url.searchParams.set(`archive_${key}`, observation.archive_id);
         url.searchParams.set(`ra_${key}`, String(position.ra));
         url.searchParams.set(`dec_${key}`, String(position.dec));
+        if (observation.local_epoch) url.searchParams.set(`local_${key}`, observation.local_epoch);
       });
     } else if (fixedPair) {
       url.searchParams.set("epoch_a", fixedPair[0]);
@@ -139,6 +160,8 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
     if (showGaia) url.searchParams.set("gaia", "1");
     if (showWise) url.searchParams.set("wise", "1");
     if (showAtlas) url.searchParams.set("view", "atlas");
+    else if (showTimelinePanel) url.searchParams.set("view", "timeline");
+    else if (archiveSelection && archiveSelection.observations.length > 2) url.searchParams.set("view", "images");
     const src = url.toString();
     return embed
       ? `<iframe src="${src.replaceAll("&", "&amp;")}" title="SpectreX SPHEREx explorer" width="100%" height="760" loading="lazy"></iframe>`
@@ -170,28 +193,33 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
             <StarList onSelect={handleTarget} />
             <FieldPanel field={field} onFov={setFov} onShare={share} onCoordinates={(value) => {
               setCoordinates(value);
-              clearPair();
+              clearSelection();
             }} />
             {(!embedded || (!pair && !activeTarget?.benchmark_available)) && <ArchivePanel key={`${targetId ?? "field"}:${ra}:${dec}:${fov}`} field={field} target={activeTarget}
               openExample={() => {
                 setCoordinates({ ra: 269.45, dec: 4.7 });
                 setFov(0.04);
-                setArchivePair(null);
+                setArchiveSelection(null);
                 setFixedPair(["dr1-2025-10-01-d1", "dr1-2026-03-11-d1"]);
                 setMode("difference");
                 setShowAtlas(false);
+                setShowTimeline(false);
               }}
-              onPair={(epochs, observations) => {
+              onSelection={(epochs, observations) => {
                 setFixedPair(null);
-                setArchivePair({ observations, original: { fov: archiveCutoutWidth(fov), epochs } });
+                setArchiveSelection({ observations, original: { fov: archiveCutoutWidth(fov), epochs } });
                 setMode("side_by_side");
                 setShowAtlas(false);
+                setShowTimeline(epochs.length > 2);
               }} />}
           </aside>
           <div className="order-first grid min-w-0 gap-2 md:order-none">
             <Panel title={activeTarget?.name ?? "Custom sky field"} actions={
               <div className="flex gap-1">
-                <button type="button" aria-pressed={!showAtlas} className={controlClass} onClick={() => setShowAtlas(false)}>Images</button>
+                <button type="button" aria-pressed={!showAtlas && !showTimelinePanel} className={controlClass}
+                  onClick={() => { setShowAtlas(false); setShowTimeline(false); }}>Images</button>
+                {timelineAvailable && <button type="button" aria-pressed={!showAtlas && showTimelinePanel} className={controlClass}
+                  onClick={() => { setShowAtlas(false); setShowTimeline(true); }}>Timeline</button>}
                 <button type="button" aria-pressed={showAtlas} className={controlClass} onClick={() => setShowAtlas(true)}>Sky atlas</button>
               </div>
             }>
@@ -203,7 +231,7 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
                 <label className="flex items-center gap-1 text-[#ffc982]">
                   <input type="checkbox" checked={showWise} onChange={(event) => setShowWise(event.target.checked)} /> AllWISE
                 </label>
-                {(fixedPair || archivePair) && activeTarget?.benchmark_available && <button type="button" className={controlClass} onClick={clearPair}>Restore benchmark pair</button>}
+                {(fixedPair || archiveSelection) && activeTarget?.benchmark_available && <button type="button" className={controlClass} onClick={clearSelection}>Restore benchmark pair</button>}
               </div>
               {(gaia.loading || wise.loading) && <Status>Loading catalog overlays…</Status>}
               {(gaia.error || wise.error) && <Status error>{gaia.error ?? wise.error}</Status>}
@@ -216,6 +244,8 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
               </div>}
             </Panel>
             {showAtlas ? <AllSkyAtlas clock={clock} onTarget={handleTarget} field={field} catalogMarks={marks} />
+              : showTimelinePanel ? <TimelinePanel key={timelineEpochs?.join(":") ?? "loading"} timeline={timeline.data}
+                  loading={imported.loading || timeline.loading} error={timeline.error ?? imported.error} marks={marks} />
               : <ComparisonPanel key={targetId ?? `${ra}:${dec}`} comparison={displayed} astrometry={measurement}
                   loading={benchmark.loading || comparison.loading || imported.loading}
                   error={comparison.error ?? benchmark.error ?? astrometry.error} mode={mode} onMode={setMode} marks={marks} />}

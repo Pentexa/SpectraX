@@ -36,7 +36,8 @@ export function ComparisonPanel({ comparison, astrometry, loading, error, mode, 
     const position = sample.centroid ?? sample.input_position;
     return [{
       id: `centroid-${key}`, ...position, color: sample.centroid ? "#ffffff" : "#e5c37b",
-      label: sample.centroid ? "Measured source center" : "Catalog position at the observation time",
+      label: sample.centroid?.method === "saturated_wings" ? "Centroid fitted to the unmasked wings"
+        : sample.centroid ? "Measured source center" : "Catalog position at the observation time",
     }];
   };
   const displacement = astrometry?.measured_offset_arcsec;
@@ -120,6 +121,7 @@ export function ComparisonPanel({ comparison, astrometry, loading, error, mode, 
           {displacement && astrometry && <p className="border-t border-border-subtle pt-2 font-mono text-[11px] text-cyan-bright">
             {Math.abs(displacement.east).toFixed(2)}″ {displacement.east < 0 ? "W" : "E"} · {Math.abs(displacement.north).toFixed(2)}″ {displacement.north < 0 ? "S" : "N"}
             {" · "}{astrometry.elapsed_days.toFixed(1)} days · {astrometry.registration?.used_sources ?? 0} reference stars
+            {astrometry.samples.some((sample) => sample.centroid?.method === "saturated_wings") && " · unmasked wing fit"}
           </p>}
           {astrometry && !displacement && (
             <Status>{astrometry.samples.map((sample) => sample.error?.details

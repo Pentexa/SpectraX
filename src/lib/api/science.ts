@@ -11,6 +11,7 @@ export type ScienceTarget = SkyField & {
   name: string;
   kind: "proper_motion" | "binary" | "variability";
   benchmark_available: boolean;
+  timeline_epochs?: string[];
   recommended_wavelength_um: number;
   pm_ra_cosdec_mas_yr: number;
   pm_dec_mas_yr: number;
@@ -52,7 +53,7 @@ export interface Astrometry {
   } | null;
   registration: { used_sources: number } | null;
   samples: { epoch: string; input_position: SkyField | Omit<SkyField, "fov">;
-    centroid: { ra: number; dec: number; snr: number } | null;
+    centroid: { ra: number; dec: number; snr: number | null; method?: "saturated_wings" } | null;
     error: { message: string; details?: { core_pixels_usable: number; core_pixels_total: number; core_flags: string[] } } | null }[];
 }
 
@@ -84,9 +85,26 @@ export interface ArchiveObservation {
   predicted_position?: { ra: number; dec: number };
 }
 
-export type ArchiveCutout = Pick<ArchiveObservation, "archive_id" | "predicted_position">;
-export type ArchivePair = readonly [ArchiveCutout, ArchiveCutout];
+export type ArchiveCutout = Pick<ArchiveObservation, "archive_id" | "predicted_position"> & { local_epoch?: string };
 export type EpochPair = readonly [string, string];
+export const MAX_TIMELINE_EPOCHS = 8;
+
+export interface Timeline {
+  grid: SkyGrid;
+  unit: string;
+  matching_bandpasses: boolean;
+  frames: {
+    epoch: string;
+    observation_id: string;
+    mjd: number;
+    release: string;
+    detector: number | null;
+    wavelength_um: number | null;
+    coverage: number;
+    pixels: Pixels;
+    flags: Pixels | null;
+  }[];
+}
 
 export function archiveCutoutWidth(fov: number) {
   return Math.max(0.02, Math.min(fov, 0.2));
@@ -196,7 +214,7 @@ export const scienceApi = {
     apiClient.get<Benchmark>(query(`/api/targets/${encodeURIComponent(targetId)}/benchmark`, { fov }), { signal }),
   observations: (targetId: string | null, field: SkyField, release: string, wavelength?: number,
     start_mjd?: number, end_mjd?: number) =>
-    apiClient.get<{ observations: ArchiveObservation[] }>(query(
+    apiClient.get<{ observations: ArchiveObservation[]; scope?: "live" | "local"; archive?: { scope?: "live" | "local" } }>(query(
       targetId ? `/api/targets/${encodeURIComponent(targetId)}/observations` : "/api/archive/search",
       { ...(targetId ? {} : { ra: field.ra, dec: field.dec, radius_deg: field.fov / 2 }),
         release, wavelength_um: wavelength, start_mjd, end_mjd, limit: 40 },
@@ -208,11 +226,16 @@ export const scienceApi = {
       dec: observation.predicted_position?.dec ?? field.dec,
       fov: archiveCutoutWidth(field.fov),
     }, { signal, timeout: 110_000 }),
-  importPair: async (observations: ArchivePair, field: SkyField, signal?: AbortSignal): Promise<EpochPair> => {
-    const first = await scienceApi.importExposure(observations[0], field, signal);
-    const second = await scienceApi.importExposure(observations[1], field, signal);
-    return [first.epoch, second.epoch];
+  importExposures: async (observations: readonly ArchiveCutout[], field: SkyField, signal?: AbortSignal) => {
+    const epochs: string[] = [];
+    for (let index = 0; index < observations.length; index += 2) {
+      epochs.push(...await Promise.all(observations.slice(index, index + 2).map(async (observation) =>
+        observation.local_epoch ?? (await scienceApi.importExposure(observation, field, signal)).epoch)));
+    }
+    return epochs;
   },
+  timeline: (field: SkyField, epochs: readonly string[], signal: AbortSignal) =>
+    apiClient.post<Timeline>("/api/timeline", { ...field, epochs }, { signal, timeout: 25_000 }),
   compare: (field: SkyField, epochs: readonly [string, string], mode: ComparisonMode, signal: AbortSignal) =>
     apiClient.get<Comparison>(query("/api/compare", { ...field, epoch_a: epochs[0], epoch_b: epochs[1], mode }), { signal }),
   astrometry: (targetId: string | null, field: SkyField, epochs: readonly [string, string], signal: AbortSignal) =>
