@@ -2,24 +2,24 @@
 
 import { useCallback, useState } from "react";
 import { useScienceRequest } from "@/hooks/useScienceRequest";
-import { scienceApi, type SkyField } from "@/lib/api/science";
+import { scienceApi, type EpochPair, type SkyField } from "@/lib/api/science";
 import { observationDate } from "./ArchivePanel";
-import type { EpochPair } from "@/lib/api/science";
 import { controlClass, Panel, Status } from "./Panel";
 
-export function SourcePanel({ epochs, targetId, field }: {
-  epochs: EpochPair; targetId: string | null; field: SkyField;
+export function SourcePanel({ epochs, targetId, field, autoMeasure = false }: {
+  epochs: EpochPair; targetId: string | null; field: SkyField; autoMeasure?: boolean;
 }) {
   const [requested, setRequested] = useState(0);
   const load = useCallback((signal: AbortSignal) => scienceApi.sourceSeries(targetId, field, epochs, signal),
     [targetId, field, epochs]);
-  const series = useScienceRequest(requested ? load : null, requested);
+  const measuring = autoMeasure || requested > 0;
+  const series = useScienceRequest(measuring ? load : null, requested);
   return (
     <Panel title="Source photometry" actions={<button type="button" className={controlClass}
       disabled={series.loading} onClick={() => setRequested((value) => value + 1)}>Measure epochs</button>}>
       {series.loading && <Status>Fitting the SPHEREx source…</Status>}
       {series.error && <Status error>{series.error}</Status>}
-      {!requested && <Status>Fit the source flux at each observation’s wavelength.</Status>}
+      {!measuring && <Status>Fit the source flux at each observation’s wavelength.</Status>}
       {series.data?.samples.map((sample) => (
         <div className="border-b border-border-subtle py-1.5 last:border-0" key={sample.epoch}>
           <p className="font-mono text-[11px] text-[#cad6e2]">{observationDate(sample.mjd)}</p>

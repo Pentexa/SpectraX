@@ -203,7 +203,7 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
                 <label className="flex items-center gap-1 text-[#ffc982]">
                   <input type="checkbox" checked={showWise} onChange={(event) => setShowWise(event.target.checked)} /> AllWISE
                 </label>
-                {(fixedPair || archivePair) && activeTarget?.benchmark_available && <button type="button" className={controlClass} onClick={clearPair}>Restore verified pair</button>}
+                {(fixedPair || archivePair) && activeTarget?.benchmark_available && <button type="button" className={controlClass} onClick={clearPair}>Restore benchmark pair</button>}
               </div>
               {(gaia.loading || wise.loading) && <Status>Loading catalog overlays…</Status>}
               {(gaia.error || wise.error) && <Status error>{gaia.error ?? wise.error}</Status>}
@@ -222,7 +222,8 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
           </div>
           {!embedded && <aside className="grid min-w-0 gap-2 md:col-span-2 xl:col-span-1">
             <SpectrumPanel key={`${ra}:${dec}`} field={field} />
-            {epochs && <SourcePanel key={epochs.join(":")} epochs={epochs} targetId={targetId} field={field} />}
+            {epochs && <SourcePanel key={epochs.join(":")} epochs={epochs} targetId={targetId} field={field}
+              autoMeasure={Boolean(benchmark.data && activeTarget?.kind === "variability")} />}
             <ReleasePanel />
             {(targetId === "r-draconis" || targetId === "rw-aurigae") && <ReferencePanel key={targetId} targetId={targetId} />}
             {activeTarget && (

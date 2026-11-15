@@ -32,11 +32,15 @@ export function ComparisonPanel({ comparison, astrometry, loading, error, mode, 
 
   const cursor = (key: "a" | "b"): SkyMark[] => {
     const sample = astrometry?.samples.find((item) => item.epoch === comparison?.epochs[key].epoch);
-    return sample?.centroid ? [{
-      id: `centroid-${key}`, ...sample.centroid, color: "#ffffff", label: "Measured source center",
-    }] : [];
+    if (!sample || (!sample.centroid && !astrometry?.predicted_catalog_offset_arcsec)) return [];
+    const position = sample.centroid ?? sample.input_position;
+    return [{
+      id: `centroid-${key}`, ...position, color: sample.centroid ? "#ffffff" : "#e5c37b",
+      label: sample.centroid ? "Measured source center" : "Catalog position at the observation time",
+    }];
   };
   const displacement = astrometry?.measured_offset_arcsec;
+  const prediction = astrometry?.predicted_catalog_offset_arcsec;
   const overlay = showOverlay && comparison?.units.a === comparison?.units.b;
   const range = comparison ? imageRange(comparison.images.a, comparison.images.b) : [0, 1] as const;
   const originalLabel = (key: "a" | "b") => {
@@ -88,7 +92,7 @@ export function ComparisonPanel({ comparison, astrometry, loading, error, mode, 
                   onChange={(event) => setOpacity(Number(event.target.value))} />
               </label>
               <FitsImage pixels={comparison.images.a} overlay={comparison.images.b} opacity={opacity / 100}
-                grid={comparison.grid} range={range} marks={marks}
+                grid={comparison.grid} range={range} marks={[...marks, ...cursor("a"), ...cursor("b")]}
                 flags={showFlags ? [opacity < 100 ? comparison.flags?.a : null, opacity > 0 ? comparison.flags?.b : null] : undefined}
                 label={`${originalLabel("a")} / ${originalLabel("b")}`} />
             </div>
@@ -121,6 +125,12 @@ export function ComparisonPanel({ comparison, astrometry, loading, error, mode, 
             <Status>{astrometry.samples.map((sample) => sample.error?.details
               ? `${sample.error.details.core_pixels_usable}/${sample.error.details.core_pixels_total} usable core pixels (${sample.error.details.core_flags.join(", ")})`
               : sample.error?.message).filter(Boolean).join(" · ") || "Relative astrometry could not be independently registered."}</Status>
+          )}
+          {astrometry && !displacement && prediction && (
+            <p className="font-mono text-[10px] text-[#e5c37b]">
+              Catalog prediction over {astrometry.elapsed_days.toFixed(1)} days ·
+              {" "}{prediction.east.toFixed(2)}″ east · {prediction.north.toFixed(2)}″ north
+            </p>
           )}
           <details className="text-[10px] text-text-muted">
             <summary className="cursor-pointer">Image quality and provenance</summary>
