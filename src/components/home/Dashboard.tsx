@@ -148,7 +148,7 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
               }}
               onPair={(value) => { setPair(value); setMode("side_by_side"); setShowAtlas(false); }} />}
           </aside>
-          <div className="grid min-w-0 gap-2">
+          <div className="order-first grid min-w-0 gap-2 md:order-none">
             <Panel title={activeTarget?.name ?? "Custom sky field"} actions={
               <div className="flex gap-1">
                 <button type="button" aria-pressed={!showAtlas} className={controlClass} onClick={() => setShowAtlas(false)}>Images</button>

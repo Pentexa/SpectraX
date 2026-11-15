@@ -42,8 +42,11 @@ export function ArchivePanel({ target, field, onPair, openExample }: {
         target?.id ?? null, field, item, wavelength ? Number(wavelength) : undefined, start, end,
       )));
       if (revision.current !== request) return;
-      setRecords(results.flatMap((result) => result.status === "fulfilled" ? result.value.observations : [])
-        .sort((a, b) => (a.observation_start_mjd ?? 0) - (b.observation_start_mjd ?? 0)));
+      const available = results.filter((result) => result.status === "fulfilled");
+      setRecords(available.length
+        ? available.flatMap((result) => result.value.observations)
+            .sort((a, b) => (a.observation_start_mjd ?? 0) - (b.observation_start_mjd ?? 0))
+        : null);
       const unavailable = results.flatMap((result, index) => result.status === "rejected"
         ? [`${releases[index]} · ${errorMessage(result.reason)}`] : []);
       if (unavailable.length) setError(unavailable.join(" / "));
