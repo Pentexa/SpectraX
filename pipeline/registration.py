@@ -62,14 +62,14 @@ def _centroids(image: Image, grid: WCS, shape: tuple[int, int]) -> SkyCoord:
 
 
 def assess_registration(a: Image, b: Image, grid: WCS, shape: tuple[int, int],
-                        exclude: tuple[SkyCoord, SkyCoord] | None = None) -> dict:
+                        exclude: tuple[SkyCoord, SkyCoord] | None = None, *, exclude_radius_pixels: int = 3) -> dict:
     """Measure relative WCS residuals from mutually matched native-image peaks."""
     first = _centroids(a, grid, shape)
     second = _centroids(b, grid, shape)
     native_arcsec = 3600 * max(a.pixel_scale, b.pixel_scale)
     if exclude is not None:
-        first = first[first.separation(exclude[0]).arcsec > 3 * native_arcsec]
-        second = second[second.separation(exclude[1]).arcsec > 3 * native_arcsec]
+        first = first[first.separation(exclude[0]).arcsec > exclude_radius_pixels * native_arcsec]
+        second = second[second.separation(exclude[1]).arcsec > exclude_radius_pixels * native_arcsec]
     limit = native_arcsec / 2
     report = {
         "status": "insufficient_matches", "reference_sources_a": len(first), "reference_sources_b": len(second),

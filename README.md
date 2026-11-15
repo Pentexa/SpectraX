@@ -28,11 +28,12 @@ The last command starts the server at [localhost:8765](http://127.0.0.1:8765/doc
 | `GET /api/archive/search` | Find IRSA spectral images in the DR1 or QR3 wide survey. Accepts `ra`, `dec`, `release`, `radius_deg`, `limit`, `wavelength_um`, `start_mjd`, and `end_mjd`. |
 | `POST /api/archive/import` | Download and register a calibrated DR1 or QR3 exposure cutout. The JSON body contains `archive_id`, `ra`, `dec`, and `fov`. |
 | `GET /api/targets` | Return the five challenge targets with catalog references and predicted ICRS positions at optional UTC `mjd`. |
-| `GET /api/targets/{target_id}/benchmark` | Return both prepared, aligned benchmark images with WCS and the measured astrometry in a single response. Supported targets are `wise-0855` and `epsilon-indi-b`. Optional `fov` is the displayed width in degrees. |
+| `GET /api/targets/{target_id}/benchmark` | Return the prepared, aligned image pair and its astrometric status for any of the five challenge targets. Optional `fov` sets the displayed width in degrees. |
 | `GET /api/targets/{target_id}/observations` | Find real IRSA exposures for a target and return a predicted position for each exposure midpoint. Supports the release, date, and wavelength search filters. |
 | `GET /api/targets/{target_id}/reference-light-curve` | Return one AAVSO optical magnitude band for `r-draconis` or `rw-aurigae`. Requires `start_mjd` and `end_mjd`. Optional `band` (`V` or `Vis.`) and `limit` control the results. |
 | `GET /api/catalog/{catalog}` | Query real Gaia DR3 (`gaia`) or AllWISE (`wise`) sources by `ra`, `dec`, `radius_deg`, and `limit`. |
 | `GET /api/compare` | `ra`, `dec`, `fov`, `epoch_a`, `epoch_b`, and `mode` (`difference`, `side_by_side`, `sum`, or `stack`). Returns aligned A and B, arithmetic result where supported, WCS, validity fractions, flags, and variance-derived values when available. |
+| `POST /api/timeline` | `ra`, `dec`, `fov`, and 3–8 distinct `epochs`. Returns chronological frames on one WCS, with per-frame wavelength, coverage and flags. |
 | `POST /api/compare/auto` | Choose a compatible difference pair from 2–8 imported `epochs`, `ra`, `dec`, `fov`, and optional `min_gap_days`. Tries up to six pairs in descending time separation. |
 | `GET /api/spectrum` | `ra`, `dec`, and optional `epoch`. Omitting `epoch` locates the DR1 tile at the coordinate. Returns 102 ordered channel slots, with `null` flux for invalid or uncovered channels. |
 | `GET /api/photometry` | `ra`, `dec`, and one image `epoch`. Fits a point source at the supplied position and returns flux density and statistical error in µJy, observation and bandpass metadata, and quality flags. |
@@ -56,6 +57,10 @@ curl.exe 'http://127.0.0.1:8765/api/compare?ra=269.45&dec=4.7&fov=0.04&epoch_a=d
 Use `planet-x-data --release QR3` to download just the QR3 cutout. The default manifest supports side-by-side viewing of the DR1 and QR3 example cutouts. Their local passbands are too far apart for a difference image under the comparison tolerance.
 
 Archive search uses Astroquery with IRSA SIA2. The radius defaults to 0.01° and accepts up to 1°. The result limit defaults to 20 and accepts up to 100. Optional wavelength and UTC MJD filters match overlapping archive ranges. `has_more` indicates that the search reached the result limit with additional matches. Each result includes the detector band, archive ID, FITS URL, and a matching local `epoch` when available. The processing endpoints use the FITS WCS to check coverage. [IRSA archive access](https://irsa.ipac.caltech.edu/spherex-archive-documentation/spherex-data-access/)
+
+If IRSA times out or returns an upstream availability error, search can return locally prepared or imported FITS covering the requested coordinates. These responses use `scope: "local"` and the frontend labels the limited results. Coordinates outside local coverage still depend on the live archive.
+
+Send `local_only=true` to either observation search endpoint to skip IRSA and query downloaded FITS immediately. During a catalog outage the import endpoint can request a fresh cutout for a known observation with pinned manifest or prior import metadata. FITS identity, detector, times and coverage still undergo validation.
 
 Send the `archive_id` from search together with a cutout center and width between 0.02° and 0.2°. The API resolves the ID at IRSA, downloads a cutout up to 32 MiB, validates the FITS, and returns the observation metadata and an `epoch` for `/api/compare` and `/api/photometry`. A new cutout returns HTTP 201. The same ID, center, and width return HTTP 200 with the stored epoch. Imports appear in `/api/datasets` and survive restarts in `PLANET_X_IMPORT_DIR`, which defaults to `imports` under the local data directory and to `/imports` in the container. Remote failures return `archive_unavailable` (502) or `archive_timeout` (504).
 
@@ -90,7 +95,9 @@ Target searches return a local epoch only when its FITS footprint contains the p
 
 Astrometry fits position, ePSF amplitude, and local background in each observation. It excludes the target from the independent reference-star match. `measured_offset_arcsec` contains chronological east and north offsets corrected for the median registration shift. A two-dimensional Mahalanobis distance estimates displacement relative to the centroid covariance and reference field scatter. Failed fits or registration leave the relative offset empty. Use `scripts/smoke_backend.py --wise-0855` on a running API to verify the benchmark using checksum-pinned IRSA cutouts.
 
-Once the two pairs are prepared with `--include-benchmarks`, `GET /api/targets` advertises `benchmark_available` for those targets. The frontend can call `GET /api/targets/wise-0855/benchmark` and render `comparison.images.a` and `comparison.images.b` on `comparison.grid.wcs`. The fitted sky coordinates are in `astrometry.samples[].centroid`. The registered displacement and covariance are in `astrometry.measured_offset_arcsec`. The same request works for `epsilon-indi-b`. Changing `fov` resizes the displayed image cutouts. The reference-star search retains its validated field width.
+The frontend sends `live=true` to the benchmark, comparison, timeline, and coordinate spectrum endpoints by default. Known exposures are fetched using their official archive URLs and cached after the size and SHA-256 match the manifest. During a download failure, the API can use the existing FITS prepared by `planet-x-data`. The response's `delivery` identifies the archive download, cache, or downloaded fallback. Coordinate spectra use the official DR1 cube with the prepared copy of the same tile as a fallback. The separate **Search downloaded FITS** action remains available for offline discovery.
+
+`GET /api/targets` advertises configured image pairs as `benchmark_archive_available` and prepared pairs as `benchmark_available`. The frontend renders `comparison.images.a` and `comparison.images.b` on `comparison.grid.wcs`. The fitted sky coordinates are in `astrometry.samples[].centroid`. The registered displacement and covariance are in `astrometry.measured_offset_arcsec` when available. Samples that fail the fit include quality details. Changing `fov` resizes the displayed image cutouts. The reference-star search retains its configured field width.
 
 ## Tests and data
 
@@ -128,3 +135,7 @@ Add `--wide-sky` to verify an additional IRSA tile outside the manifest region.
 On a Docker host, run `docker compose -f deploy/compose.yaml up -d --wait`. Set `SPECTRAX_IMAGE` to the desired image tag or digest. Compose prepares the verified sample files, mounts them read-only in the API, and keeps imported FITS and cached cubes in a writable volume. The gateway on `127.0.0.1:8080` applies a request limit and returns HTTP 429 when the limit is exceeded. Set `PLANET_X_CORS_ORIGINS` to the frontend origin when it is known.
 
 Point the host's HTTPS reverse proxy at the gateway and use `/api/ready` for uptime checks. The gateway keeps a shared rate limit for archive and cube routes. `docker compose -f deploy/compose.yaml logs api gateway` shows request and service logs. Keep the `samples` and `imports` volumes across upgrades.
+
+## Author
+
+- Korhan Erol

@@ -1,5 +1,6 @@
 import hashlib
 import re
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from time import monotonic
 from urllib.parse import urlsplit
@@ -10,7 +11,7 @@ from astropy.wcs import NoConvergence
 from pydantic import ConfigDict, Field, FiniteFloat, ValidationError
 from requests import get
 
-from pipeline.archive import find_image, irsa_timeouts, retry_irsa
+from pipeline.archive import ARCHIVE_OUTAGE_CODES, find_image, irsa_timeouts, retry_irsa
 from pipeline.catalog import DataError, Observation, Position
 from pipeline.images import read_fits_image
 from pipeline.import_storage import (
@@ -19,6 +20,7 @@ from pipeline.import_storage import (
 
 ARCHIVE_ID = re.compile(r"^ivo://irsa\.ipac/spherex_(dr1|qr3)\?([A-Za-z0-9_]{1,50})/D([1-6])$")
 IRSA_HOST = "irsa.ipac.caltech.edu"
+IRSA_CLOUD_HOST = "nasa-irsa-spherex.s3.us-east-1.amazonaws.com"
 MAX_SIZE = 32 * 1024**2
 REJECT_FLAG_BITS = 0xFFFFFFFF ^ (1 << 21)
 
@@ -110,12 +112,42 @@ def _download_cutout(url: str, path: Path, quota: ImportQuota) -> tuple[int, str
     return retry_irsa(download, budget=60)
 
 
-def _observation(request: ImportRequest, epoch: str, path: Path, quota: ImportQuota) -> Observation:
+def _known_archive_image(known_observations, request, release_id, obs_id, detector):
+    position = SkyCoord(request.ra, request.dec, unit="deg", frame="icrs")
+    for observation, _ in known_observations():
+        if (observation.source != "NASA/IPAC IRSA SPHEREx"
+                or (observation.release, observation.observation_id, observation.detector) != (release_id, obs_id, detector)):
+            continue
+        catalog_center = SkyCoord(observation.coverage.ra, observation.coverage.dec, unit="deg", frame="icrs")
+        if position.separation(catalog_center).deg > observation.coverage.fov:
+            continue
+        url = urlsplit(str(observation.access))
+        if url.scheme != "https":
+            continue
+        if url.netloc == IRSA_HOST:
+            access_url = url._replace(query="", fragment="").geturl()
+        elif url.netloc == IRSA_CLOUD_HOST:
+            access_url = f"https://{IRSA_HOST}/ibe/data/spherex{url.path}"
+        else:
+            continue
+        return {"obs_id": obs_id, "energy_bandpassname": observation.band, "access_url": access_url,
+                "t_min": observation.observation_start_mjd, "t_max": observation.observation_end_mjd}
+    return None
+
+
+def _observation(request: ImportRequest, epoch: str, path: Path, quota: ImportQuota, known_observations) -> Observation:
     release, obs_id, detector_value = ARCHIVE_ID.fullmatch(request.archive_id).groups()
     detector = int(detector_value)
     band = f"SPHEREx-D{detector}"
     release_id = release.upper()
-    row = find_image(release_id, request.archive_id, request.ra, request.dec)
+    try:
+        row = find_image(release_id, request.archive_id, request.ra, request.dec)
+    except DataError as exc:
+        if exc.code not in ARCHIVE_OUTAGE_CODES or known_observations is None:
+            raise
+        row = _known_archive_image(known_observations, request, release_id, obs_id, detector)
+        if row is None:
+            raise
     if row["obs_id"] != obs_id or row["energy_bandpassname"] != band:
         raise DataError("invalid_archive_response", "IRSA returned inconsistent observation metadata", 502)
     url, calibration = _cutout_url(row, release, obs_id, detector, request)
@@ -150,7 +182,9 @@ def _observation(request: ImportRequest, epoch: str, path: Path, quota: ImportQu
     )
 
 
-def import_exposure(quota: ImportQuota, request: ImportRequest) -> tuple[Observation, Path, bool]:
+def import_exposure(quota: ImportQuota, request: ImportRequest, *,
+                    known_observations: Callable[[], Iterable[tuple[Observation, Path]]] | None = None
+                    ) -> tuple[Observation, Path, bool]:
     directory = quota.directory
     coordinates = (request.ra + 0.0, request.dec + 0.0, request.fov)
     epoch = "irsa-" + hashlib.sha256(f"{request.archive_id}:{coordinates}".encode()).hexdigest()
@@ -164,7 +198,7 @@ def import_exposure(quota: ImportQuota, request: ImportRequest) -> tuple[Observa
             # when two ASGI workers request the same cutout concurrently.
             pending = staging / epoch
             pending.mkdir()
-            observation = _observation(request, epoch, pending / FILENAME, quota)
+            observation = _observation(request, epoch, pending / FILENAME, quota, known_observations)
             metadata = observation.model_dump_json().encode("utf-8")
             with quota.write_lock():
                 existing = get_import(directory, epoch)

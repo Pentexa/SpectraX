@@ -1,5 +1,7 @@
+import json
 from hashlib import sha256
 from io import BytesIO
+from pathlib import Path
 
 import numpy as np
 from astropy.io import fits
@@ -8,6 +10,7 @@ from requests import Response
 
 from apps.api.main import create_app
 from pipeline import cube_archive
+from pipeline.catalog import DataError
 
 TARGETS = (
     ({"ra": 60.8109955, "dec": 51.3404038}, 445),
@@ -90,6 +93,43 @@ def test_coordinate_spectrum_downloads_persists_and_evicts_tiles(tmp_path, monke
         assert len(calls) == 2
         assert not (tmp_path / "cubes" / result["epoch"]).exists()
         assert (tmp_path / "cubes" / "dr1-npix7945" / "cube.fits").is_file()
+
+
+def test_live_spectrum_tries_archive_before_prepared_cube(tmp_path, monkeypatch):
+    manifest = tmp_path / "manifest.json"
+    source = Path(__file__).resolve().parents[1] / "data/manifests/spherex-dr1.json"
+    inventory = json.loads(source.read_text(encoding="utf-8"))
+    inventory["observations"] = []
+    position, tile = TARGETS[1]
+    payload = cube_fixture(tile, position)
+    prepared = inventory["cubes"][0]
+    prepared.update(size_bytes=len(payload), sha256=sha256(payload).hexdigest())
+    (tmp_path / prepared["filename"]).write_bytes(payload)
+    manifest.write_text(json.dumps(inventory), encoding="utf-8")
+    attempts = []
+
+    def serve_cube(url, **kwargs):
+        attempts.append(url)
+        if len(attempts) == 1:
+            raise DataError("archive_unavailable", "Unavailable", 502)
+        response = Response()
+        response.status_code = 200
+        response.raw = BytesIO(payload)
+        response.headers["Content-Length"] = str(len(payload))
+        return response
+
+    monkeypatch.setattr(cube_archive, "get", serve_cube)
+    with TestClient(create_app(manifest, tmp_path)) as client:
+        params = position | {"live": True}
+        offline = client.get("/api/spectrum", params=params)
+        assert offline.status_code == 200, offline.text
+        assert offline.json()["epoch"] == prepared["epoch"]
+        assert offline.json()["delivery"] == "downloaded_fallback"
+        online = client.get("/api/spectrum", params=params)
+        assert online.status_code == 200, online.text
+        assert online.json()["epoch"] == "dr1-npix7945"
+        assert online.json()["delivery"] == "archive_cube"
+        assert attempts == [prepared["access"], prepared["access"]]
 
 
 def test_cube_identity_mismatch_cannot_publish(tmp_path, monkeypatch):

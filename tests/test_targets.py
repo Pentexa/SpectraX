@@ -1,14 +1,16 @@
 from pathlib import Path
+from shutil import copyfile
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 from requests import Response
 
 from apps.api import main
 from apps.api.main import create_app
-from pipeline import catalog_overlays, reference_light_curves, targets
+from pipeline import catalog_overlays, exposures, reference_light_curves, targets
 from pipeline.archive import ArchiveObservation, ArchiveSearch
-from pipeline.catalog import load_manifest
+from pipeline.catalog import DataError, load_manifest
 
 MANIFEST = Path(__file__).resolve().parents[1] / "data/manifests/spherex-dr1.json"
 
@@ -28,14 +30,103 @@ def test_challenge_targets_have_epoch_positions_and_catalog_references(tmp_path)
     assert 9 < (later["barnard"]["dec"] - earlier["barnard"]["dec"]) * 3600 < 12
 
 
-def test_benchmark_reports_missing_files_and_unsupported_targets(tmp_path):
+def test_benchmark_reports_missing_files_for_each_challenge_target(tmp_path):
     with TestClient(create_app(MANIFEST, tmp_path)) as client:
-        response = client.get("/api/targets/wise-0855/benchmark")
-        assert response.status_code == 503
-        assert response.json()["error"]["details"]["epochs"] == ["wise-0855-a", "wise-0855-b"]
-        unsupported = client.get("/api/targets/barnard/benchmark")
-        assert unsupported.status_code == 404 and unsupported.json()["error"]["code"] == "benchmark_unavailable"
+        for target in client.get("/api/targets").json()["targets"]:
+            target_id = target["id"]
+            response = client.get(f"/api/targets/{target_id}/benchmark")
+            assert response.status_code == 503
+            assert response.json()["error"]["code"] == "benchmark_not_prepared"
+            assert response.json()["error"]["details"]["epochs"] == [f"{target_id}-a", f"{target_id}-b"]
+        assert client.get("/api/targets/unknown/benchmark").status_code == 404
         assert client.get("/api/targets/wise-0855/benchmark", params={"fov": 1}).status_code == 422
+
+
+def test_existing_benchmark_manifest_directory_can_load_a_subset(tmp_path, monkeypatch):
+    filename = "spherex-wise-0855.json"
+    (tmp_path / filename).write_bytes((MANIFEST.parent / filename).read_bytes())
+    monkeypatch.setenv("PLANET_X_BENCHMARK_MANIFEST_DIR", str(tmp_path))
+    with TestClient(create_app(MANIFEST, tmp_path)) as client:
+        assert client.get("/api/targets/wise-0855/benchmark").status_code == 503
+        assert client.get("/api/targets/barnard/benchmark").status_code == 404
+
+
+def test_archive_outage_serves_real_prepared_timeline_when_downloaded(monkeypatch):
+    directory = MANIFEST.parents[1] / "samples"
+    records = load_manifest(MANIFEST.with_name("spherex-rw-aurigae.json")).observations
+    if not all((directory / "rw-aurigae" / item.filename).is_file() for item in records):
+        pytest.skip("Run planet-x-data --include-benchmarks to prepare real FITS")
+
+    def unavailable(**_):
+        raise DataError("archive_unavailable", "IRSA archive request failed", 502)
+
+    monkeypatch.setattr(main, "search_images", unavailable)
+    with TestClient(create_app(MANIFEST, directory)) as client:
+        target = next(item for item in client.get("/api/targets").json()["targets"] if item["id"] == "rw-aurigae")
+        local_epochs = []
+        for release in ("DR1", "QR3"):
+            result = client.get("/api/targets/rw-aurigae/observations", params={"release": release})
+            assert result.status_code == 200
+            assert result.json()["archive"]["scope"] == "local"
+            assert all(item["available_locally"] for item in result.json()["observations"])
+            local_epochs.extend(item["epoch"] for item in result.json()["observations"])
+        assert set(local_epochs) == set(target["timeline_epochs"])
+        request = {key: target[key] for key in ("ra", "dec", "fov")}
+        result = client.post("/api/timeline", json=request | {"epochs": local_epochs[::-1]})
+        assert result.status_code == 200
+        dates = [item["mjd"] for item in result.json()["frames"]]
+        assert len(dates) == 3 and dates == sorted(set(dates))
+        assert client.post("/api/timeline", json=request | {"epochs": [local_epochs[0]] * 3}).status_code == 422
+        assert client.get("/api/archive/search", params={"ra": 0, "dec": 0}).status_code == 502
+
+
+def test_local_only_search_does_not_call_irsa(tmp_path, monkeypatch):
+    def unexpected(**_):
+        pytest.fail("A local-only search made a live IRSA request")
+
+    monkeypatch.setattr(main, "search_images", unexpected)
+    with TestClient(create_app(MANIFEST, tmp_path)) as client:
+        params = {"ra": 0, "dec": 0, "local_only": True}
+        response = client.get("/api/archive/search", params=params)
+        assert response.status_code == 200
+        assert response.json()["scope"] == "local"
+        assert response.json()["observations"] == []
+        invalid = client.get("/api/archive/search", params=params | {"start_mjd": 61200, "end_mjd": 61000})
+        assert invalid.status_code == 422
+        target = client.get("/api/targets/rw-aurigae/observations", params={"local_only": True})
+        assert target.status_code == 200
+        assert target.json()["archive"]["scope"] == "local"
+
+
+def test_known_archive_cutout_can_import_during_catalog_outage(tmp_path, monkeypatch):
+    record = load_manifest(MANIFEST).observations[0]
+    sample = MANIFEST.parents[1] / "samples" / record.filename
+    if not sample.is_file():
+        pytest.skip("Run planet-x-data to prepare a verified IRSA cutout")
+
+    def unavailable(*_):
+        raise DataError("archive_unavailable", "IRSA catalog request failed", 502)
+
+    attempted = []
+
+    def download(url, path, quota):
+        attempted.append(url)
+        copyfile(sample, path)
+        return record.size_bytes, record.sha256
+
+    monkeypatch.setattr(exposures, "find_image", unavailable)
+    monkeypatch.setattr(exposures, "_download_cutout", download)
+    archive_id = f"ivo://irsa.ipac/spherex_dr1?{record.observation_id}/D1"
+    with TestClient(create_app(MANIFEST, tmp_path)) as client:
+        payload = record.coverage.model_dump() | {"archive_id": archive_id}
+        created = client.post("/api/archive/import", json=payload)
+        assert created.status_code == 201, created.text
+        assert created.json()["sha256"] == record.sha256
+        cached = client.post("/api/archive/import", json=payload)
+        assert cached.status_code == 200
+        assert cached.json()["epoch"] == created.json()["epoch"]
+        assert client.post("/api/archive/import", json=payload | {"ra": 0}).status_code == 502
+        assert attempted == [str(record.access)]
 
 
 def test_target_search_checks_the_local_fits_footprint(tmp_path, monkeypatch):

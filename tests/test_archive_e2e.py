@@ -281,6 +281,53 @@ def running_api(irsa, tmp_path, *, quota_bytes=1024**3, with_process=False):
                     process.wait(timeout=10)
 
 
+def test_manifest_comparison_fetches_fits_then_reports_cache_and_downloaded_fallback(irsa, tmp_path):
+    archive, manifest_path, _ = irsa
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    imports = tmp_path / "imports"
+    prepared = tmp_path / "prepared"
+    prepared.mkdir()
+    manifest["cubes"] = []
+    records = manifest["observations"][:2]
+    manifest["observations"] = records
+    source_paths = []
+    for record in records:
+        source = urlsplit(record["access"])
+        path = source.path
+        payload = archive.payloads[path]
+        source_paths.append(path)
+        record.pop("download_mirrors", None)
+        record.pop("full_image", None)
+        record.update(access=f"http://127.0.0.1:{archive.server_port}{path}?center=269.45,4.7&size=0.05",
+                      size_bytes=len(payload), sha256=sha256(payload).hexdigest())
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    first, second = records
+    fallback = prepared / second["filename"]
+    fallback.write_bytes(archive.payloads[source_paths[1]])
+
+    with TestClient(create_app(manifest_path, prepared, imports)) as client:
+        params = {"ra": 269.45, "dec": 4.7, "fov": 0.05, "epoch_a": first["epoch"],
+                  "epoch_b": second["epoch"], "mode": "side_by_side", "live": True}
+        response = client.get("/api/compare", params=params)
+        assert response.status_code == 200, response.text
+        assert response.json()["delivery"] == {record["epoch"]: "archive_download" for record in records}
+        assert {path for path, _ in archive.calls} == set(source_paths)
+
+        cache = imports / "archive-files" / second["sha256"] / second["filename"]
+        assert cache.read_bytes() == fallback.read_bytes()
+        assert client.get("/api/compare", params=params).json()["delivery"] == {
+            record["epoch"]: "archive_cache" for record in records}
+        assert len(archive.calls) == 2
+
+        cache.write_bytes(b"corrupt cache")
+        archive.payloads[source_paths[1]] = b"unverified archive response"
+        response = client.get("/api/compare", params=params)
+        assert response.status_code == 200, response.text
+        assert response.json()["delivery"] == {
+            first["epoch"]: "archive_cache", second["epoch"]: "downloaded_fallback"}
+        assert sha256(fallback.read_bytes()).hexdigest() == second["sha256"]
+
+
 def test_archive_import_from_discovery_through_science_and_restart(irsa, tmp_path):
     server, _, real_samples = irsa
     with running_api(irsa, tmp_path) as client:

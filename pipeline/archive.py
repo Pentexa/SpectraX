@@ -8,6 +8,8 @@ from time import monotonic, sleep
 from typing import Literal, TypeVar
 
 from astroquery.ipac.irsa import IrsaClass
+from astropy.coordinates import SkyCoord
+from astropy.wcs import NoConvergence
 from numpy.ma import is_masked
 from pydantic import BaseModel, HttpUrl
 from pyvo.dal import DALAccessError, SIA2Service
@@ -15,11 +17,14 @@ from requests.exceptions import ChunkedEncodingError, ConnectionError, RequestEx
 from urllib3.exceptions import ProtocolError, ReadTimeoutError
 
 from pipeline.catalog import DataError, Observation
+from pipeline.compare import _bandpass
+from pipeline.images import read_image
 
 ArchiveRelease = Literal["DR1", "QR3"]
 REQUIRED_COLUMNS = {"obs_id", "obs_publisher_did", "obs_collection", "access_url", "energy_bandpassname",
                     "t_min", "t_max", "em_min", "em_max"}
 RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
+ARCHIVE_OUTAGE_CODES = {"archive_unavailable", "archive_timeout"}
 RETRY_DELAYS = (0.25, 0.5)
 MAX_RETRY_AFTER = 5.0
 Result = TypeVar("Result")
@@ -40,10 +45,55 @@ class ArchiveObservation(BaseModel):
 
 class ArchiveSearch(BaseModel):
     source: Literal["NASA/IPAC IRSA"] = "NASA/IPAC IRSA"
+    scope: Literal["live", "local"] = "live"
     release: ArchiveRelease
     collection: str
     has_more: bool
     observations: list[ArchiveObservation]
+
+
+def search_prepared(*, release, ra, dec, radius_deg, limit, wavelength_um, start_mjd, end_mjd,
+                    local_observations, position_at=None):
+    validate_time_range(start_mjd, end_mjd)
+    center = SkyCoord(ra, dec, unit="deg", frame="icrs")
+    collection = f"spherex_{release.lower()}"
+    results = {}
+    for observation, directory in local_observations:
+        if (observation.release != release or observation.source != "NASA/IPAC IRSA SPHEREx"
+                or observation.detector is None or observation.spectral_wcs != "spherex-lvf"):
+            continue
+        start, end = observation.observation_start_mjd, observation.observation_end_mjd
+        if (start_mjd is not None and end < start_mjd) or (end_mjd is not None and start > end_mjd):
+            continue
+        position = position_at((start + end) / 2) if position_at else center
+        saved = SkyCoord(observation.coverage.ra, observation.coverage.dec, unit="deg")
+        if saved.separation(position).deg > observation.coverage.fov + radius_deg:
+            continue
+        archive_id = f"ivo://irsa.ipac/{collection}?{observation.observation_id}/D{observation.detector}"
+        if archive_id in results or not (directory / observation.filename).is_file():
+            continue
+        try:
+            image = read_image(directory, observation)
+            x, y = map(float, image.wcs.world_to_pixel(position))
+            height, width = image.signal.shape
+            if not (-0.5 <= x < width - 0.5 and -0.5 <= y < height - 0.5):
+                continue
+            wavelength, bandwidth = map(float, _bandpass(image, position))
+        except (DataError, NoConvergence, ValueError):
+            continue
+        lower = upper = None
+        if isfinite(wavelength) and isfinite(bandwidth) and bandwidth > 0:
+            lower, upper = wavelength - bandwidth / 2, wavelength + bandwidth / 2
+        if wavelength_um is not None and (lower is None or not lower <= wavelength_um <= upper):
+            continue
+        results[archive_id] = ArchiveObservation(
+            archive_id=archive_id, observation_id=observation.observation_id, band=observation.band,
+            fits_url=observation.access, observation_start_mjd=start, observation_end_mjd=end,
+            wavelength_min_um=lower, wavelength_max_um=upper, epoch=observation.epoch, available_locally=True,
+        )
+    ordered = sorted(results.values(), key=lambda item: (item.observation_start_mjd, item.archive_id))
+    return ArchiveSearch(release=release, collection=collection, has_more=len(ordered) > limit,
+                         scope="local", observations=ordered[:limit])
 
 
 def _retry_after(value: str | None) -> float:
@@ -145,11 +195,15 @@ def find_image(release: ArchiveRelease, archive_id: str, ra: float, dec: float):
     return table[0]
 
 
+def validate_time_range(start_mjd, end_mjd):
+    if start_mjd is not None and end_mjd is not None and start_mjd > end_mjd:
+        raise DataError("invalid_time_range", "start_mjd must be less than or equal to end_mjd")
+
+
 def search_images(*, release: ArchiveRelease, ra: float, dec: float, radius_deg: float, limit: int,
                   wavelength_um: float | None, start_mjd: float | None, end_mjd: float | None,
                   local_observations: list[tuple[Observation, Path]]) -> ArchiveSearch:
-    if start_mjd is not None and end_mjd is not None and start_mjd > end_mjd:
-        raise DataError("invalid_time_range", "start_mjd must be less than or equal to end_mjd")
+    validate_time_range(start_mjd, end_mjd)
     time_range = None
     if start_mjd is not None or end_mjd is not None:
         lower = start_mjd if start_mjd is not None else "-Inf"

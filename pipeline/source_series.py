@@ -6,9 +6,11 @@ from typing import Annotated
 from astropy.coordinates import SkyCoord
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
+from pipeline.aperture_variability import aperture_change
 from pipeline.catalog import DataError, Observation
 from pipeline.photometry import measure_source
 from pipeline.targets import get_target
+from pipeline.wing_variability import wing_change
 
 EpochId = Annotated[str, Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_.-]+$")]
 
@@ -113,11 +115,18 @@ def source_series(request: SourceSeriesRequest, locate: Callable[[str], tuple[Ob
         east, north = start.spherical_offsets_to(end)
         predicted = {"epoch_a": first["epoch"], "epoch_b": last["epoch"], "elapsed_days": last["mjd"] - first["mjd"],
                      "east_arcsec": east.arcsec, "north_arcsec": north.arcsec}
+    curves = _light_curves(samples, {record.epoch: record.comparison_key for record, _ in selected})
+    aperture = None
+    wings = None
+    if target and target.kind == "variability" and not any(curve["change"] for curve in curves):
+        aperture = aperture_change(selected, samples)
+        if aperture is None:
+            wings = wing_change(selected, samples)
     return {
         "target_id": request.target_id, "quantity": "source_flux_density",
         "predicted_catalog_offset_arcsec": predicted,
         "samples": samples, "visits": list(visits.values()),
-        "light_curves": _light_curves(samples, {record.epoch: record.comparison_key for record, _ in selected}),
+        "light_curves": curves, "aperture_change": aperture, "wing_change": wings,
         "warnings": [
             "Visit spectra contain only measured detector samples.",
             "Changes and weighted means use independent statistical errors. Agreement in calibration and wavelength is required.",
