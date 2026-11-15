@@ -23,8 +23,19 @@ def test_challenge_targets_have_epoch_positions_and_catalog_references(tmp_path)
     later = {target["id"]: target for target in second}
     assert set(earlier) == {"barnard", "epsilon-indi-b", "wise-0855", "rw-aurigae", "r-draconis"}
     assert all(item["source"].startswith("https://simbad.") for item in later.values())
+    assert all(not item["benchmark_available"] for item in later.values())
     assert 7 < (earlier["wise-0855"]["ra"] - later["wise-0855"]["ra"]) * 3600 < 10
     assert 9 < (later["barnard"]["dec"] - earlier["barnard"]["dec"]) * 3600 < 12
+
+
+def test_benchmark_reports_missing_files_and_unsupported_targets(tmp_path):
+    with TestClient(create_app(MANIFEST, tmp_path)) as client:
+        response = client.get("/api/targets/wise-0855/benchmark")
+        assert response.status_code == 503
+        assert response.json()["error"]["details"]["epochs"] == ["wise-0855-a", "wise-0855-b"]
+        unsupported = client.get("/api/targets/barnard/benchmark")
+        assert unsupported.status_code == 404 and unsupported.json()["error"]["code"] == "benchmark_unavailable"
+        assert client.get("/api/targets/wise-0855/benchmark", params={"fov": 1}).status_code == 422
 
 
 def test_target_search_checks_the_local_fits_footprint(tmp_path, monkeypatch):

@@ -16,6 +16,7 @@ from pydantic import Field, FiniteFloat
 
 from pipeline.archive import ArchiveRelease, ArchiveSearch, search_images
 from pipeline.astrometry import AstrometryRequest, astrometry
+from pipeline.benchmarks import BENCHMARK_FIELDS, load_benchmark_observations
 from pipeline.catalog import Cube, DataError, Position, data_path, load_manifest
 from pipeline.catalog_overlays import Overlay, query_overlay
 from pipeline.compare import Mode, compare
@@ -72,6 +73,11 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
         api.state.manifest = manifest
         api.state.observations = {record.epoch: record for record in manifest.observations}
         api.state.cubes = {record.epoch: record for record in manifest.cubes}
+        api.state.benchmarks = load_benchmark_observations(ROOT / 'data/manifests')
+        api.state.benchmark_epochs = {
+            record.epoch: (record, data_dir / target_id) for target_id, records in api.state.benchmarks.items()
+            for record in records
+        }
         yield
 
     api = FastAPI(title='Planet X SPHEREx API', version='0.1.0', lifespan=lifespan)
@@ -93,7 +99,9 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
 
     def lookup_observation(epoch: str):
         observation = api.state.observations.get(epoch)
-        return (observation, data_dir) if observation else get_import(import_dir, epoch)
+        if observation:
+            return observation, data_dir
+        return api.state.benchmark_epochs.get(epoch) or get_import(import_dir, epoch)
 
     def require_observation(epoch: str):
         located = lookup_observation(epoch)
@@ -163,7 +171,13 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
 
     @api.get('/api/targets')
     def targets(mjd: TargetDate = DEFAULT_TARGET_MJD):
-        return {'targets': [target.metadata(mjd) for target in TARGETS.values()]}
+        return {'targets': [
+            target.metadata(mjd) | {
+                'benchmark_available': target.id in api.state.benchmarks and all(
+                    (data_dir / target.id / record.filename).is_file() for record in api.state.benchmarks[target.id]
+                ),
+            } for target in TARGETS.values()
+        ]}
 
     @api.get('/api/catalog/{catalog}')
     def catalog_overlay(catalog: Overlay, ra: RightAscension, dec: Declination,
@@ -229,6 +243,29 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
         result['epochs'] = {'a': a.metadata(directory_a) | {'fits': image_a.metadata},
                             'b': b.metadata(directory_b) | {'fits': image_b.metadata}}
         return result
+
+    @api.get('/api/targets/{target_id}/benchmark')
+    def target_benchmark(target_id: str, fov: Annotated[float, Query(ge=0.01, le=0.2)] = 0.05):
+        target = get_target(target_id)
+        records = api.state.benchmarks.get(target_id)
+        if records is None:
+            raise DataError('benchmark_unavailable', 'No verified image pair is configured for this target', 404)
+        directory = data_dir / target_id
+        missing = [record.epoch for record in records if not (directory / record.filename).is_file()]
+        if missing:
+            raise DataError('benchmark_not_prepared', 'Run planet-x-data --include-benchmarks', 503,
+                            details={'epochs': missing})
+        first, last = records
+        midpoint = (first.observation_start_mjd + first.observation_end_mjd
+                    + last.observation_start_mjd + last.observation_end_mjd) / 4
+        center = target.position(midpoint)
+        position = Position(ra=center.ra.deg, dec=center.dec.deg, fov=fov)
+        locations = {record.epoch: (record, directory) for record in records}
+        measurement = astrometry(AstrometryRequest(
+            target_id=target_id, epochs=[first.epoch, last.epoch], fov=BENCHMARK_FIELDS[target_id],
+        ), locations.__getitem__)
+        images = compare_observations(position, 'side_by_side', (first, directory), (last, directory))
+        return {'target': target.metadata(midpoint), 'comparison': images, 'astrometry': measurement}
 
     @api.get('/api/compare')
     def compare_epochs(ra: RightAscension, dec: Declination, fov: Fov, epoch_a: Epoch, epoch_b: Epoch,

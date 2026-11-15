@@ -54,7 +54,9 @@ jobs:
         with:
           path: data/samples
           key: spherex-v2-${{ hashFiles('data/manifests/spherex-*.json') }}
-          restore-keys: spherex-${{ hashFiles('data/manifests/spherex-dr1.json') }}
+          restore-keys: |
+            spherex-v2-
+            spherex-${{ hashFiles('data/manifests/spherex-dr1.json') }}
       - name: Build container
         run: |
           docker build --pull \
@@ -75,11 +77,7 @@ jobs:
           for attempt in 1 2 3; do
             if docker run --rm --user "$(id -u):$(id -g)" \
               --mount "type=bind,src=$PWD/data/samples,dst=/data" \
-              "$IMAGE:sha-$GITHUB_SHA" planet-x-data --include-cubes &&
-              docker run --rm --user "$(id -u):$(id -g)" \
-                --mount "type=bind,src=$PWD/data/samples,dst=/data" \
-                "$IMAGE:sha-$GITHUB_SHA" planet-x-data --manifest /app/data/manifests/spherex-wise-0855.json \
-                --data-dir /data/wise-0855; then
+              "$IMAGE:sha-$GITHUB_SHA" planet-x-data --include-cubes --include-benchmarks; then
               chmod -R a+rX data/samples
               exit 0
             fi
@@ -105,24 +103,14 @@ jobs:
           jq -e '.status == "ok"' "$RUNNER_TEMP/backend-health.json"
           curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8765/openapi.json \
             --output "$RUNNER_TEMP/backend-openapi.json"
-          jq -e '.paths | has("/api/compare") and has("/api/spectrum") and has("/api/releases") and has("/api/archive/import") and has("/api/targets") and has("/api/source-series") and has("/api/astrometry")' \
+          jq -e '.paths | has("/api/compare") and has("/api/spectrum") and has("/api/releases") and has("/api/archive/import") and has("/api/targets/{target_id}/benchmark") and has("/api/source-series") and has("/api/astrometry")' \
             "$RUNNER_TEMP/backend-openapi.json"
-          smoke_args=(--wide-sky)
+          smoke_args=(--wide-sky --benchmarks)
           if [[ "$GITHUB_REF_TYPE" == tag ]]; then
             jq -e --arg version "${GITHUB_REF_NAME#v}" '.info.version == $version' "$RUNNER_TEMP/backend-openapi.json"
             smoke_args+=(--live-archive)
           fi
           python3 -u scripts/smoke_backend.py "${smoke_args[@]}"
-      - name: Verify real WISE 0855 astrometry
-        shell: bash
-        run: |
-          container=$(docker run --detach --publish 127.0.0.1:8765:8765 \
-            --mount "type=bind,src=$PWD/data/samples/wise-0855,dst=/data,readonly" \
-            -e PLANET_X_MANIFEST=/app/data/manifests/spherex-wise-0855.json "$IMAGE:sha-$GITHUB_SHA")
-          trap 'docker logs "$container"; docker rm -f "$container" >/dev/null' EXIT
-          curl --fail --silent --show-error --max-time 2 --retry 20 --retry-all-errors --retry-delay 1 \
-            --output /dev/null http://127.0.0.1:8765/api/ready
-          python3 -u scripts/smoke_backend.py --wise-0855
       - name: Verify deployment health and request limits
         shell: bash
         run: |

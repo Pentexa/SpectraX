@@ -9,7 +9,7 @@ Use Python 3.11 or later. From the project directory in PowerShell:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e '.[test]'
-.\.venv\Scripts\planet-x-data.exe --include-cubes
+.\.venv\Scripts\planet-x-data.exe --include-cubes --include-benchmarks
 .\.venv\Scripts\planet-x-api.exe
 ```
 
@@ -26,6 +26,7 @@ The last command starts the server at [localhost:8765](http://127.0.0.1:8765/doc
 | `GET /api/archive/search` | Find IRSA spectral images in the DR1 or QR3 wide survey. Accepts `ra`, `dec`, `release`, `radius_deg`, `limit`, `wavelength_um`, `start_mjd`, and `end_mjd`. |
 | `POST /api/archive/import` | Download and register a calibrated DR1 or QR3 exposure cutout. The JSON body contains `archive_id`, `ra`, `dec`, and `fov`. |
 | `GET /api/targets` | Return the five challenge targets with catalog references and predicted ICRS positions at optional UTC `mjd`. |
+| `GET /api/targets/{target_id}/benchmark` | Return both prepared, aligned benchmark images with WCS and the measured astrometry in a single response. Supported targets are `wise-0855` and `epsilon-indi-b`. Optional `fov` is the displayed width in degrees. |
 | `GET /api/targets/{target_id}/observations` | Find real IRSA exposures for a target and return a predicted position for each exposure midpoint. Supports the release, date, and wavelength search filters. |
 | `GET /api/targets/{target_id}/reference-light-curve` | Return one AAVSO optical magnitude band for `r-draconis` or `rw-aurigae`. Requires `start_mjd` and `end_mjd`. Optional `band` (`V` or `Vis.`) and `limit` control the results. |
 | `GET /api/catalog/{catalog}` | Query real Gaia DR3 (`gaia`) or AllWISE (`wise`) sources by `ra`, `dec`, `radius_deg`, and `limit`. |
@@ -86,6 +87,8 @@ For a shareable view, keep `ra`, `dec`, `fov`, catalog/release, and the two upst
 Target searches return a local epoch only when its FITS footprint contains the predicted source position. The source series groups measured detector samples by exposure visit. Light curves use matching detector, calibration, and local wavelength. A change is provided when two compatible samples pass the SNR and residual checks. Weighted means can include signed low-SNR samples and exclude high-residual fits. The [challenge target report](docs/benchmarks/CHALLENGE_TARGETS.md) records the data and quality outcomes from real observations.
 
 Astrometry fits position, ePSF amplitude, and local background in each observation. It excludes the target from the independent reference-star match. `measured_offset_arcsec` contains chronological east and north offsets corrected for the median registration shift. A two-dimensional Mahalanobis distance estimates displacement relative to the centroid covariance and reference field scatter. Failed fits or registration leave the relative offset empty. Use `scripts/smoke_backend.py --wise-0855` on a running API to verify the benchmark using checksum-pinned IRSA cutouts.
+
+Once the two pairs are prepared with `--include-benchmarks`, `GET /api/targets` advertises `benchmark_available` for those targets. The frontend can call `GET /api/targets/wise-0855/benchmark` and render `comparison.images.a` and `comparison.images.b` on `comparison.grid.wcs`. The fitted sky coordinates are in `astrometry.samples[].centroid`. The registered displacement and covariance are in `astrometry.measured_offset_arcsec`. The same request works for `epsilon-indi-b`. Changing `fov` resizes the displayed image cutouts. The reference-star search retains its validated field width.
 
 ## Tests and data
 

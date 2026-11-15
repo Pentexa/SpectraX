@@ -7,6 +7,7 @@ from urllib.request import urlopen
 
 from dotenv import load_dotenv
 
+from pipeline.benchmarks import load_benchmark_observations
 from pipeline.catalog import ArchiveFile, DataError, Observation, Product, load_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -66,6 +67,7 @@ def main():
     parser.add_argument("--manifest", type=Path, default=configured_path("PLANET_X_MANIFEST", "data/manifests/spherex-dr1.json"))
     parser.add_argument("--data-dir", type=Path, default=configured_path("PLANET_X_DATA_DIR", "data/samples"))
     parser.add_argument("--include-cubes", action="store_true", help="Also fetch the optional spectral cube(s)")
+    parser.add_argument("--include-benchmarks", action="store_true", help="Also fetch the verified target image pairs")
     parser.add_argument("--full-images", action="store_true", help="Prefer full exposures over cutouts when available")
     parser.add_argument("--release", help="Only fetch products from this release, e.g. DR1 or QR3")
     args = parser.parse_args()
@@ -76,10 +78,14 @@ def main():
         parser.error(str(exc))
     if args.release and not (observations or cubes):
         parser.error(f"No FITS products are listed for release '{args.release.upper()}'")
-    products = [*observations, *(cubes if args.include_cubes else [])]
-    for product in products:
+    products = [(product, args.data_dir) for product in [*observations, *(cubes if args.include_cubes else [])]]
+    if args.include_benchmarks:
+        for target, records in load_benchmark_observations(args.manifest.parent).items():
+            products.extend((record, args.data_dir / target) for record in records
+                            if not args.release or record.release == args.release.upper())
+    for product, directory in products:
         try:
-            print(f"{product.epoch}: {fetch(product, args.data_dir, full_image=args.full_images)}")
+            print(f"{product.epoch}: {fetch(product, directory, full_image=args.full_images)}")
         except (OSError, ValueError) as exc:
             parser.exit(1, f"Could not download {product.epoch}: {exc}\n")
 

@@ -1,7 +1,7 @@
 services:
   prepare-data:
     image: ${SPECTRAX_IMAGE:-ghcr.io/pentexa/spectrax-api:main}
-    command: ["planet-x-data", "--include-cubes"]
+    command: ["planet-x-data", "--include-cubes", "--include-benchmarks"]
     volumes:
       - samples:/data
 

@@ -179,6 +179,10 @@ def verify_wide_sky(base_url: str):
 def verify_wise_0855(base_url: str):
     _, result = post_json(base_url, "astrometry", target_id="wise-0855",
                           epochs=["wise-0855-a", "wise-0855-b"], fov=0.18)
+    assert_wise_0855(result)
+
+
+def assert_wise_0855(result: dict):
     require(result["status"] == "measured" and result["registration"]["used_sources"] >= 5,
             "WISE 0855 relative registration failed")
     offset = result["measured_offset_arcsec"]
@@ -188,12 +192,36 @@ def verify_wise_0855(base_url: str):
     print(f"WISE 0855 displacement verified: {offset['east']:.2f} arcsec east, {offset['north']:.2f} arcsec north")
 
 
+def verify_benchmarks(base_url: str):
+    catalog = get_json(base_url, "targets")["targets"]
+    available = {item["id"] for item in catalog if item["benchmark_available"]}
+    require(available == {"wise-0855", "epsilon-indi-b"}, "Expected both prepared benchmark pairs")
+    for target in sorted(available):
+        result = get_json(base_url, f"targets/{target}/benchmark")
+        comparison = result["comparison"]
+        require(comparison["mode"] == "side_by_side" and comparison["alignment"]["overlap_fraction"] > 0.5,
+                f"No common image footprint for {target}")
+        require(all(any(pixel is not None for row in comparison["images"][epoch] for pixel in row)
+                    for epoch in ("a", "b")), f"Empty benchmark image for {target}")
+        astrometry = result["astrometry"]
+        if target == "wise-0855":
+            assert_wise_0855(astrometry)
+        else:
+            require(astrometry["status"] == "measured", "Epsilon Indi B relative registration failed")
+            offset = astrometry["measured_offset_arcsec"]
+            require(math.isclose(offset["east"], 3.98, abs_tol=0.8)
+                    and math.isclose(offset["north"], -1.38, abs_tol=0.8) and offset["significance"] > 2.5,
+                    "Unexpected Epsilon Indi B displacement")
+            print(f"Epsilon Indi B displacement verified: {offset['east']:.2f} arcsec east, {offset['north']:.2f} arcsec north")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Verify the API against the manifest's real SPHEREx DR1 and QR3 samples")
     parser.add_argument("--base-url", default="http://127.0.0.1:8765")
     parser.add_argument("--live-archive", action="store_true", help="Also search IRSA and download into a fresh import directory")
     parser.add_argument("--wide-sky", action="store_true", help="Verify a second DR1 tile from the IRSA cloud archive")
     parser.add_argument("--wise-0855", action="store_true", help="Verify the API using the WISE 0855 manifest")
+    parser.add_argument("--benchmarks", action="store_true", help="Verify both prepared target pairs through the public API")
     args = parser.parse_args()
     base_url = args.base_url.rstrip("/")
     if args.wise_0855:
@@ -204,3 +232,5 @@ if __name__ == "__main__":
         verify_live_archive(base_url)
     if args.wide_sky:
         verify_wide_sky(base_url)
+    if args.benchmarks:
+        verify_benchmarks(base_url)
