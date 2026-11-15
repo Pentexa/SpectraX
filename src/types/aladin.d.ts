@@ -10,15 +10,14 @@ export {};
 
 declare global {
   interface Window {
-    A?: {
-      /** Readiness promise (resolves once the WebGL/wasm core is ready). */
-      init: Promise<void>;
-      aladin: (
-        target: HTMLElement | string,
-        options?: Record<string, unknown>,
-      ) => AladinInstance;
-    };
+    A?: AladinModule;
   }
+}
+
+export interface AladinModule {
+  init: Promise<void>;
+  aladin: (target: HTMLElement | string, options?: Record<string, unknown>) => AladinInstance;
+  HiPS: (id: string, options: Record<string, unknown>) => object;
 }
 
 export interface AladinInstance {
@@ -27,10 +26,10 @@ export interface AladinInstance {
   /** Project CSS pixels to sky coordinates (degrees). */
   pix2world: (x: number, y: number) => [number, number] | null;
   on: (event: string, handler: (payload?: unknown) => void) => void;
-  remove: () => void;
   getSize: () => [number, number];
-  gotoRaDec?: (ra: number, dec: number) => void;
-  setFoV?: (degrees: number) => void;
+  gotoRaDec: (ra: number, dec: number) => void;
+  setFoV: (degrees: number) => void;
+  setProjection: (projection: string) => void;
 }
 
 declare module "aladin-lite" {

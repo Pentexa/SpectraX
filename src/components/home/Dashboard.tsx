@@ -59,6 +59,7 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
     if (isEpoch(first) && isEpoch(second) && first !== second) setPair([first, second]);
     setShowGaia(params.get("gaia") === "1");
     setShowWise(params.get("wise") === "1");
+    setShowAtlas(params.get("view") === "atlas");
     void loadData();
   }, [loadData, selectTarget]);
 
@@ -105,6 +106,7 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
     }
     if (showGaia) url.searchParams.set("gaia", "1");
     if (showWise) url.searchParams.set("wise", "1");
+    if (showAtlas) url.searchParams.set("view", "atlas");
     const src = url.toString();
     return embed
       ? `<iframe src="${src.replaceAll("&", "&amp;")}" title="SpectreX SPHEREx explorer" width="100%" height="760" loading="lazy"></iframe>`

@@ -36,12 +36,12 @@ src/
     └── dashboardStore.ts   # Zustand store (data + UI state + actions)
 ```
 
-> **All-sky map**: the hand-rolled Mollweide canvas was replaced with
-> **Aladin Lite v3** (CDS sky atlas). The runtime is installed as an npm
-> dependency (`aladin-lite`) and bundled with the app; a vendored local copy
-> (`public/vendor/aladin/aladin.esm.js`) and the official CDN act as
-> fallbacks. Catalog stars, selection, diff-mode styling and the orbit
-> animation are HTML overlays projected with `world2pix`.
+> **All-sky map**: Aladin Lite v3 loads from
+> `public/vendor/aladin/aladin.esm.js`. The Next.js server serves real DSS2
+> color tiles from the MAST and NASA/IPAC IRSA mirrors at `/hips/dss2`.
+> The atlas requires WebGL2. Select **Center target** for the current field
+> or **All sky** to switch to an overview. Use `?view=atlas` in a shared URL
+> to open this view directly.
 
 ## Getting started
 
