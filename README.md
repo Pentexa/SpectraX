@@ -137,3 +137,7 @@ Point the host's HTTPS reverse proxy at the gateway and use `/api/ready` for upt
 ## Author
 
 - Korhan Erol
+
+## Contributors
+
+- Mustafa Emir Yayla
