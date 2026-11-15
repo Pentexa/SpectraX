@@ -3,6 +3,10 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  experimental: {
+    // The first request for an uncached SPHEREx cube can take up to 240 seconds.
+    proxyTimeout: 270_000,
+  },
   async rewrites() {
     const backend = (process.env.SPECTREX_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8765").replace(/\/$/, "");
     return [{ source: "/science/api/:path*", destination: `${backend}/api/:path*` }];
