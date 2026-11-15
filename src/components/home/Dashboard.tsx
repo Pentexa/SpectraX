@@ -55,7 +55,7 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
     original?: { fov: number; epochs: string[] };
   } | null>(null);
   const [importAttempt, setImportAttempt] = useState(0);
-  const [showAtlas, setShowAtlas] = useState(false);
+  const [showAtlas, setShowAtlas] = useState(true);
   const [showTimeline, setShowTimeline] = useState(false);
   const [showGaia, setShowGaia] = useState(false);
   const [showWise, setShowWise] = useState(false);
@@ -78,15 +78,23 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
     const first = params.get("epoch_a"), second = params.get("epoch_b");
     const cutouts = archiveKeys.map((key) => readCutout(params, key)).filter((value) => value !== null);
     const view = params.get("view");
-    if (cutouts.length >= 2 && new Set(cutouts.map((item) => item.archive_id)).size === cutouts.length) {
+    const hasArchiveSelection = cutouts.length >= 2
+      && new Set(cutouts.map((item) => item.archive_id)).size === cutouts.length;
+    const hasFixedPair = isEpoch(first) && isEpoch(second) && first !== second;
+    if (hasArchiveSelection) {
       setArchiveSelection({ observations: cutouts });
-    } else if (isEpoch(first) && isEpoch(second) && first !== second) {
+    } else if (hasFixedPair) {
       setFixedPair([first, second]);
     }
     setShowGaia(params.get("gaia") === "1");
     setShowWise(params.get("wise") === "1");
-    setShowAtlas(view === "atlas");
-    setShowTimeline(view === "timeline" || (!view && cutouts.length > 2));
+    if (view === "atlas" || view === "images" || view === "timeline") {
+      setShowAtlas(view === "atlas");
+      setShowTimeline(view === "timeline");
+    } else {
+      setShowAtlas(!hasArchiveSelection && !hasFixedPair && !(requestedMode && modes.has(requestedMode)));
+      setShowTimeline(hasArchiveSelection && cutouts.length > 2);
+    }
     void loadData();
   }, [loadData, selectTarget]);
 
@@ -159,9 +167,7 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
     }
     if (showGaia) url.searchParams.set("gaia", "1");
     if (showWise) url.searchParams.set("wise", "1");
-    if (showAtlas) url.searchParams.set("view", "atlas");
-    else if (showTimelinePanel) url.searchParams.set("view", "timeline");
-    else if (archiveSelection && archiveSelection.observations.length > 2) url.searchParams.set("view", "images");
+    url.searchParams.set("view", showAtlas ? "atlas" : showTimelinePanel ? "timeline" : "images");
     const src = url.toString();
     return embed
       ? `<iframe src="${src.replaceAll("&", "&amp;")}" title="SpectreX SPHEREx explorer" width="100%" height="760" loading="lazy"></iframe>`
