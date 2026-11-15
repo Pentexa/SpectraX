@@ -222,6 +222,20 @@ function query(path: string, values: Record<string, string | number | undefined>
   return `${path}?${params}`;
 }
 
+async function loadTargets(): Promise<{ targets: ScienceTarget[] }> {
+  const deadline = Date.now() + 90_000;
+  const retryDelay = 3_000;
+  for (;;) {
+    try {
+      return await apiClient.get("/api/targets", { timeout: Math.max(1, deadline - Date.now()) });
+    } catch (error) {
+      const status = (error as ApiError | null)?.status;
+      if (status === undefined || ![502, 503, 504].includes(status) || Date.now() + retryDelay >= deadline) throw error;
+      await new Promise<void>((resolve) => setTimeout(resolve, retryDelay));
+    }
+  }
+}
+
 async function loadSpectrum(field: Pick<SkyField, "ra" | "dec">, signal: AbortSignal): Promise<Spectrum> {
   const url = query("/api/spectrum", { ...field, live: 1 });
   const deadline = Date.now() + 270_000;
@@ -252,7 +266,7 @@ async function loadSpectrum(field: Pick<SkyField, "ra" | "dec">, signal: AbortSi
 }
 
 export const scienceApi = {
-  targets: () => apiClient.get<{ targets: ScienceTarget[] }>("/api/targets"),
+  targets: loadTargets,
   releases: (signal: AbortSignal) => apiClient.get<{ releases: Release[] }>("/api/releases", { signal }),
   benchmark: (targetId: string, fov: number, signal: AbortSignal) =>
     apiClient.get<Benchmark>(query(`/api/targets/${encodeURIComponent(targetId)}/benchmark`, { fov, live: 1 }),

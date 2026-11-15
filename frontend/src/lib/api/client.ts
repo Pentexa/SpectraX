@@ -54,7 +54,11 @@ async function request<T>(path: string, init?: RequestInit, options: RequestOpti
     } satisfies ApiError;
   }
 
-  return (await response.json()) as T;
+  try {
+    return (await response.json()) as T;
+  } catch (cause) {
+    throw { status: 502, message: "The backend returned an unreadable response.", cause } satisfies ApiError;
+  }
 }
 
 export const apiClient = {

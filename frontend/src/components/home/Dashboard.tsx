@@ -186,7 +186,8 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
       {source !== "api" ? (
         <main className="mx-auto w-full max-w-md p-6">
           <Panel title="SPHEREx data">
-            <Status error={source === "offline"}>{source === "offline" ? loadError ?? "Backend unavailable." : "Loading the target catalog…"}</Status>
+            <Status error={source === "offline"}>{source === "offline" ? loadError ?? "Backend unavailable."
+              : "Connecting to the SPHEREx data service. It can take about a minute to start after being idle."}</Status>
             {source === "offline" && <button type="button" className={`mt-2 ${controlClass}`} onClick={() => void loadData()}>Retry connection</button>}
           </Panel>
         </main>
