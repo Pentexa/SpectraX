@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field, FiniteFloat
 
 from pipeline.archive import ArchiveRelease, ArchiveSearch, search_images
+from pipeline.astrometry import AstrometryRequest, astrometry
 from pipeline.catalog import Cube, DataError, Position, data_path, load_manifest
 from pipeline.catalog_overlays import Overlay, query_overlay
 from pipeline.compare import Mode, compare
@@ -290,6 +291,10 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
     @api.post('/api/source-series')
     def get_source_series(request: SourceSeriesRequest):
         return source_series(request, require_observation)
+
+    @api.post('/api/astrometry')
+    def measure_astrometry(request: AstrometryRequest):
+        return astrometry(request, require_observation)
 
     def cube_revision(cube: Cube) -> tuple[int, int]:
         stat = data_path(data_dir, cube).stat()

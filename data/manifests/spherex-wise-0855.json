@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "observations": [
+    {
+      "access": "https://irsa.ipac.caltech.edu/ibe/data/spherex/dr1/level2/2025W46_1A/l2b-v27-2026-206/6/level2_2025W46_1A_0238_1D6_spx_l2b-v27-2026-206.fits?center=133.76019838679107,-7.242244305443577&size=0.2",
+      "size_bytes": 4170240,
+      "sha256": "88d4b43bce231c252b742bb5304e0b2889105f096e8d350190df325cdf5d762c",
+      "epoch": "wise-0855-a",
+      "source": "NASA/IPAC IRSA SPHEREx",
+      "release": "DR1",
+      "observation_id": "2025W46_1A_0238_1",
+      "observation_start_mjd": 60989.97699147,
+      "observation_end_mjd": 60989.978323848,
+      "filename": "wise-0855-a.fits",
+      "calibration": "SPHEREx DR1 Level 2B v27",
+      "processing_history": [
+        "SPHEREx Level 2B calibration",
+        "IRSA cutout"
+      ],
+      "coverage": {
+        "ra": 133.76019838679107,
+        "dec": -7.242244305443577,
+        "fov": 0.2
+      },
+      "flags": "FLAGS extension. SOURCE (bit 21) is allowed. All other set bits are masked.",
+      "band": "SPHEREx-D6",
+      "detector": 6,
+      "spectral_wcs": "spherex-lvf",
+      "reject_flag_bits": 4292870143
+    },
+    {
+      "access": "https://irsa.ipac.caltech.edu/ibe/data/spherex/dr1/level2/2026W17_1B/l2b-v27-2026-242/6/level2_2026W17_1B_0227_4D6_spx_l2b-v27-2026-242.fits?center=133.7589615748621,-7.2421046267988975&size=0.2",
+      "size_bytes": 4170240,
+      "sha256": "a840dc0dacc6db0e6622186179c12196d2949a2f6edb455fe05ce253e1e61a53",
+      "epoch": "wise-0855-b",
+      "source": "NASA/IPAC IRSA SPHEREx",
+      "release": "DR1",
+      "observation_id": "2026W17_1B_0227_4",
+      "observation_start_mjd": 61151.20091772,
+      "observation_end_mjd": 61151.202250098,
+      "filename": "wise-0855-b.fits",
+      "calibration": "SPHEREx DR1 Level 2B v27",
+      "processing_history": [
+        "SPHEREx Level 2B calibration",
+        "IRSA cutout"
+      ],
+      "coverage": {
+        "ra": 133.7589615748621,
+        "dec": -7.2421046267988975,
+        "fov": 0.2
+      },
+      "flags": "FLAGS extension. SOURCE (bit 21) is allowed. All other set bits are masked.",
+      "band": "SPHEREx-D6",
+      "detector": 6,
+      "spectral_wcs": "spherex-lvf",
+      "reject_flag_bits": 4292870143
+    }
+  ]
+}

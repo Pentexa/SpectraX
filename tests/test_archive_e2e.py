@@ -20,6 +20,9 @@ import pytest
 from astropy.io import fits
 from astropy.table import Table
 from astropy.wcs import WCS
+from fastapi.testclient import TestClient
+
+from apps.api.main import create_app
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "data/manifests/spherex-dr1.json"
@@ -27,7 +30,7 @@ CENTER = {"ra": 269.45, "dec": 4.7}
 CUTOUT = {**CENTER, "fov": 0.05}
 
 
-def synthetic_exposure(product, index):
+def synthetic_exposure(product, index, *, motion=(0, 0), references=False):
     """Build a small FITS with a wavelength table, known PSF and variance."""
     wcs = WCS(naxis=2)
     wcs.wcs.ctype = ["RA---TAN", "DEC--TAN"]
@@ -60,7 +63,11 @@ def synthetic_exposure(product, index):
     ], name="EPSF")
     psf.header.update({"DETCOORD": "sky", "DETECTOR": 1, "OVSMPX": 4, "OVSMPY": 4})
     y, x = np.mgrid[-14:15, -14:15]
-    signal = 0.2 + (1 + index) * np.exp(-(x**2 + y**2) / 2)
+    dx, dy = motion
+    signal = 0.2 + (1 + index) * np.exp(-((x - dx)**2 + (y - dy)**2) / 2)
+    if references:
+        for ref_x, ref_y in [(-9, -9), (9, -9), (-9, 0), (9, 0), (-9, 9), (9, 9)]:
+            signal += 2 * np.exp(-((x - ref_x)**2 + (y - ref_y)**2) / 2)
     stream = BytesIO()
     fits.HDUList([
         fits.PrimaryHDU(),
@@ -71,6 +78,32 @@ def synthetic_exposure(product, index):
         lookup,
     ]).writeto(stream)
     return stream.getvalue()
+
+
+def test_astrometry_measures_subpixel_motion_and_requires_reference_stars(tmp_path):
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    observations = manifest["observations"][:2]
+    for index, observation in enumerate(observations):
+        payload = synthetic_exposure(observation, index, motion=(index * 0.6, -index * 0.25), references=True)
+        (tmp_path / observation["filename"]).write_bytes(payload)
+        observation.update(size_bytes=len(payload), sha256=sha256(payload).hexdigest())
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    body = CENTER | {"epochs": [item["epoch"] for item in reversed(observations)]}
+    with TestClient(create_app(manifest_path, tmp_path)) as client:
+        response = client.post("/api/astrometry", json=body)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["status"] == "measured"
+        assert result["registration"]["used_sources"] == 6
+        offset = result["measured_offset_arcsec"]
+        assert offset["east"] == pytest.approx(-0.6 * 6.15, abs=0.02)
+        assert offset["north"] == pytest.approx(-0.25 * 6.15, abs=0.02)
+        assert offset["significance"] > 3
+        sparse = client.post("/api/astrometry", json=body | {"fov": 0.02}).json()
+        assert sparse["status"] == "registration_unverified"
+        assert sparse["measured_offset_arcsec"] is None
+        assert all(item["centroid"] for item in sparse["samples"])
 
 
 @pytest.fixture

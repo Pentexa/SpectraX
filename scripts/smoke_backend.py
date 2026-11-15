@@ -95,6 +95,11 @@ def verify(base_url: str):
     _, series = post_json(base_url, "source-series", **PHOTOMETRY_TARGET, epochs=[EPOCH_B, EPOCH_A])
     require([item["epoch"] for item in series["samples"]] == [EPOCH_A, EPOCH_B]
             and series["samples"][0]["photometry"] == photometry, "Unexpected source time series")
+    _, astrometry = post_json(base_url, "astrometry", **PHOTOMETRY_TARGET, epochs=[EPOCH_A, EPOCH_B])
+    require(astrometry["status"] == "measured" and astrometry["registration"]["used_sources"] >= 5,
+            "The DR1 astrometry control field did not register")
+    require(astrometry["measured_offset_arcsec"]["significance"] < 1,
+            "The DR1 control source has an unexpected astrometric displacement")
 
     spectrum = get_json(base_url, "spectrum", **POSITION, epoch=CUBE)
     channels = spectrum["channels"]
@@ -171,13 +176,29 @@ def verify_wide_sky(base_url: str):
     print(f"Cygnus low-SNR reference verified, {fit['flux_density_ujy']:.2f} ± {fit['statistical_error_ujy']:.2f} uJy")
 
 
+def verify_wise_0855(base_url: str):
+    _, result = post_json(base_url, "astrometry", target_id="wise-0855",
+                          epochs=["wise-0855-a", "wise-0855-b"], fov=0.18)
+    require(result["status"] == "measured" and result["registration"]["used_sources"] >= 5,
+            "WISE 0855 relative registration failed")
+    offset = result["measured_offset_arcsec"]
+    require(math.isclose(offset["east"], -5.125, abs_tol=0.05)
+            and math.isclose(offset["north"], 1.710, abs_tol=0.05) and offset["significance"] > 4,
+            "Unexpected WISE 0855 displacement in the verified DR1 exposures")
+    print(f"WISE 0855 displacement verified: {offset['east']:.2f} arcsec east, {offset['north']:.2f} arcsec north")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Verify the API against the manifest's real SPHEREx DR1 and QR3 samples")
     parser.add_argument("--base-url", default="http://127.0.0.1:8765")
     parser.add_argument("--live-archive", action="store_true", help="Also search IRSA and download into a fresh import directory")
     parser.add_argument("--wide-sky", action="store_true", help="Verify a second DR1 tile from the IRSA cloud archive")
+    parser.add_argument("--wise-0855", action="store_true", help="Verify the API using the WISE 0855 manifest")
     args = parser.parse_args()
     base_url = args.base_url.rstrip("/")
+    if args.wise_0855:
+        verify_wise_0855(base_url)
+        raise SystemExit(0)
     verify(base_url)
     if args.live_archive:
         verify_live_archive(base_url)

@@ -33,6 +33,7 @@ The last command starts the server at [localhost:8765](http://127.0.0.1:8765/doc
 | `GET /api/spectrum` | `ra`, `dec`, and optional `epoch`. Omitting `epoch` locates the DR1 tile at the coordinate. Returns 102 ordered channel slots, with `null` flux for invalid or uncovered channels. |
 | `GET /api/photometry` | `ra`, `dec`, and one image `epoch`. Fits a point source at the supplied position and returns flux density and statistical error in µJy, observation and bandpass metadata, and quality flags. |
 | `POST /api/source-series` | Measure 1–24 image `epochs` at `ra` and `dec` or a catalog `target_id`. Returns detector samples by visit, compatible light curves, and per-exposure errors. |
+| `POST /api/astrometry` | Fit the source centroid in two `epochs` at `ra` and `dec` or at the date-dependent position for `target_id`. Optional `fov` sets the reference-star search width. Returns the relative offset and its covariance when the independent registration passes. |
 | `GET /api/layers` | `epoch`. Returns the six detector groups and their channel ranges. |
 | `GET /api/layers/{detector}` | `ra`, `dec`, `fov`, optional `epoch`, and optional `channel` (1–17, default 9). Returns a cutout of one calibrated channel and its flags within the selected tile. |
 
@@ -76,6 +77,8 @@ Set `PLANET_X_DR1_CUBE_REVISION` to a newer supported IRSA `hips_YYYYMMDD` direc
 For a shareable view, keep `ra`, `dec`, `fov`, catalog/release, and the two upstream `archive_id` values in the frontend URL. If the selected cuts are absent in the current backend instance, import each archive ID using its saved cutout center before drawing the view. The spectrum endpoint works with coordinates alone. Catalog overlays report their native reference frame and Gaia's epoch. Target positions are geocentric catalog predictions and are evaluated at each image's observation midpoint.
 
 Target searches return a local epoch only when its FITS footprint contains the predicted source position. The source series groups measured detector samples by exposure visit. Light curves use matching detector, calibration, and local wavelength. A change is provided when two compatible samples pass the SNR and residual checks. Weighted means can include signed low-SNR samples and exclude high-residual fits. The [challenge target report](docs/benchmarks/CHALLENGE_TARGETS.md) records the data and quality outcomes from real observations.
+
+Astrometry fits position, ePSF amplitude, and local background in each observation. It excludes the target from the independent reference-star match. `measured_offset_arcsec` contains chronological east and north offsets corrected for the median registration shift. A two-dimensional Mahalanobis distance estimates displacement relative to the centroid covariance and reference field scatter. Failed fits or registration leave the relative offset empty. Use `scripts/smoke_backend.py --wise-0855` on a running API to verify the benchmark using checksum-pinned IRSA cutouts.
 
 ## Tests and data
 

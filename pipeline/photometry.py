@@ -67,7 +67,7 @@ def _local_epsf(path: Path, x: float, y: float, detector: int | None) -> ImagePS
     return ImagePSF(data, x_0=x, y_0=y, oversampling=(sample_y, sample_x))
 
 
-def measure_source(data_dir: Path, observation: Observation, ra: float, dec: float) -> Photometry:
+def _fit_window(data_dir: Path, observation: Observation, ra: float, dec: float):
     image = read_image(data_dir, observation)
     if image.spectral is None or image.variance is None or image.flags is None or "EPSF" not in image.metadata["quality_hdus"]:
         raise DataError("photometry_unavailable", "Source photometry requires a SPHEREx ePSF, wavelength WCS, and variance", 409)
@@ -95,9 +95,14 @@ def measure_source(data_dir: Path, observation: Observation, ra: float, dec: flo
 
     model = _local_epsf(data_path(data_dir, observation), x, y, image.metadata["detector"])
     yy, xx = np.mgrid[cy - radius:cy + radius + 1, cx - radius:cx + radius + 1]
-    profile = model(xx, yy)[usable]
     weights = 1 / variance[usable]
     signal = image.signal[region][usable]
+    return image, model, (x, y), region, usable, xx[usable], yy[usable], signal, weights
+
+
+def measure_source(data_dir: Path, observation: Observation, ra: float, dec: float) -> Photometry:
+    image, model, (x, y), region, usable, xx, yy, signal, weights = _fit_window(data_dir, observation, ra, dec)
+    profile = model(xx, yy)
 
     # Centering the profile removes the constant sky term from the weighted fit.
     mean_profile = np.average(profile, weights=weights)
