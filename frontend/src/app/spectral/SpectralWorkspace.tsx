@@ -41,12 +41,12 @@ export function SpectralWorkspace({ initialField }: { initialField: SkyField }) 
             <dd className="font-mono text-sm text-cyan-bright sm:text-base">DR1 cube</dd>
           </div>
         </dl>
-        <SpectrumPanel key={`${field.ra}:${field.dec}`} field={field} />
+        <SpectrumPanel key={`${field.ra}:${field.dec}`} field={field} explorer />
       </div>
       <section className={`md:col-start-1 md:row-start-2 ${sectionCard}`}>
         <h2 className="mb-2 text-base font-semibold">Reading the spectrum</h2>
         <p className={sectionCopy}>
-          The chart shows surface brightness at the selected sky pixel in a multi-epoch mosaic. Select a channel for its image and quality flags, or choose a detector mean to combine its 17 channels.
+          The spectrum measures surface brightness at the selected coordinate. Increase the field width to see more of the surrounding sky. DR1 cube pixels span 12.9 arcseconds.
         </p>
         <Link className={`mt-4 ${sectionLink}`} href={{ pathname: "/atlas", query: { ...field, view: "atlas" } }}>
           Open field in atlas <span aria-hidden="true" className="ml-2">↗</span>

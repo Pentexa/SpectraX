@@ -182,7 +182,7 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
   return (
     <div className="flex min-h-screen flex-col" style={{ background: "radial-gradient(ellipse at 50% 0%, rgba(30,52,74,0.22) 0%, transparent 65%), linear-gradient(#0b1017, #090d12)" }}>
       {!embedded && <SiteHeader activeSection="map" dataSource={source} onOpenAtlas={() => setShowAtlas(true)}
-        spectralHref={`/spectral?ra=${ra}&dec=${dec}&fov=${fov}`} />}
+        spectralHref={`/spectral?ra=${ra}&dec=${dec}`} />}
       {source !== "api" ? (
         <main className="mx-auto w-full max-w-md p-6">
           <Panel title="SPHEREx data">

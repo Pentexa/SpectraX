@@ -27,7 +27,7 @@ Built for **Planet X and SPHEREx**, a [2026 NASA Space Apps Challenge](https://w
 | --- | --- |
 | `/atlas` | Choose a target or enter sky coordinates. Start with the Aladin Lite DSS2 atlas and add Gaia DR3 or AllWISE overlays. |
 | Observation comparison | Browse DR1 and QR3 visits, blink between aligned images, build a timeline, or subtract, sum and stack compatible exposures. Inspect FITS quality flags and provenance. |
-| `/spectral` | Plot 102 DR1 wavelength channels at a sky position. View an individual band or combine the 17 channels from a detector. |
+| `/spectral` | Open the DR1 spectrum and band image at a sky position. Select among 102 channels or combine the 17 channels from a detector. Toggle individual pixels to inspect the cutout. |
 | `/research` | Open the five challenge targets and reproduce the [benchmark results](docs/benchmarks/CHALLENGE_TARGETS.md). |
 | `/embed` | Use the atlas coordinate panel to copy a share link or an iframe with your field and selected observations. |
 

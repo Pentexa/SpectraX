@@ -29,7 +29,7 @@ function project(grid: SkyGrid, ra: number, dec: number) {
 }
 
 export function FitsImage({ pixels, grid, range, marks = [], signed = false, label,
-  flags, overlay, opacity = 0.5 }: {
+  flags, overlay, opacity = 0.5, smooth = false }: {
   pixels: Pixels;
   grid: SkyGrid;
   range: readonly [number, number];
@@ -39,6 +39,7 @@ export function FitsImage({ pixels, grid, range, marks = [], signed = false, lab
   flags?: readonly (Pixels | null | undefined)[];
   overlay?: Pixels;
   opacity?: number;
+  smooth?: boolean;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [low, high] = range;
@@ -73,7 +74,7 @@ export function FitsImage({ pixels, grid, range, marks = [], signed = false, lab
     <figure className="min-w-0">
       <div className="relative overflow-hidden rounded-[2px] border border-[#2b3b4d] bg-[#080f17]" style={{ aspectRatio: `${grid.width}/${grid.height}` }}>
         <canvas ref={canvas} width={grid.width} height={grid.height} role="img" aria-label={label}
-          className="absolute inset-0 h-full w-full [image-rendering:pixelated]" />
+          className={`absolute inset-0 h-full w-full ${smooth ? "" : "[image-rendering:pixelated]"}`} />
         {marks.map((mark) => {
           const point = project(grid, mark.ra, mark.dec);
           if (!point) return null;

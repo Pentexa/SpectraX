@@ -22,7 +22,7 @@ export default async function SpectralPage({ searchParams }: {
   const field = {
     ra: validPosition ? ra : 269.45,
     dec: validPosition ? dec : 4.7,
-    fov: fov >= 0.01 && fov <= 0.2 ? fov : 0.05,
+    fov: fov >= 0.01 && fov <= 0.2 ? fov : 0.2,
   };
 
   return (

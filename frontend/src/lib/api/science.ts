@@ -1,4 +1,5 @@
 import { apiClient } from "./client";
+import type { ApiError } from "./types";
 
 export interface SkyField {
   ra: number;
@@ -141,6 +142,7 @@ export interface Spectrum {
 }
 
 export type SpectralImage = {
+  detector: number;
   image: Pixels;
   grid: SkyGrid;
   flags: Pixels;
@@ -220,6 +222,35 @@ function query(path: string, values: Record<string, string | number | undefined>
   return `${path}?${params}`;
 }
 
+async function loadSpectrum(field: Pick<SkyField, "ra" | "dec">, signal: AbortSignal): Promise<Spectrum> {
+  const url = query("/api/spectrum", { ...field, live: 1 });
+  const deadline = Date.now() + 270_000;
+  const delay = 2_000;
+  for (;;) {
+    signal.throwIfAborted();
+    try {
+      return await apiClient.get<Spectrum>(url, { signal, timeout: Math.max(1, deadline - Date.now()) });
+    } catch (error) {
+      if ((error as ApiError | null)?.code !== "cube_busy" || Date.now() + delay >= deadline) throw error;
+    }
+    await new Promise<void>((resolve, reject) => {
+      const abort = () => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      };
+      const timer = setTimeout(() => {
+        signal.removeEventListener("abort", abort);
+        resolve();
+      }, delay);
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) {
+        signal.removeEventListener("abort", abort);
+        abort();
+      }
+    });
+  }
+}
+
 export const scienceApi = {
   targets: () => apiClient.get<{ targets: ScienceTarget[] }>("/api/targets"),
   releases: (signal: AbortSignal) => apiClient.get<{ releases: Release[] }>("/api/releases", { signal }),
@@ -262,8 +293,7 @@ export const scienceApi = {
     apiClient.post<SourceSeries>("/api/source-series", {
       ...(targetId ? { target_id: targetId } : { ra: field.ra, dec: field.dec }), epochs,
     }, { signal, timeout: 20_000 }),
-  spectrum: (field: Pick<SkyField, "ra" | "dec">, signal: AbortSignal) =>
-    apiClient.get<Spectrum>(query("/api/spectrum", { ra: field.ra, dec: field.dec, live: 1 }), { signal, timeout: 270_000 }),
+  spectrum: loadSpectrum,
   layer: (field: SkyField, detector: number, channel: number | undefined, epoch: string, signal: AbortSignal) =>
     apiClient.get<SpectralImage>(query(`/api/layers/${detector}`, {
       ...field, epoch, channel, combine: channel === undefined ? 1 : undefined,
