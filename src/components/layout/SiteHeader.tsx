@@ -6,7 +6,7 @@ import { NAV_SECTIONS } from "@/lib/constants/nav";
 interface SiteHeaderProps {
   activeSection: string;
   onNavigate: (sectionId: string) => void;
-  dataSource?: "loading" | "api" | "mock";
+  dataSource?: "loading" | "api" | "mock" | "offline";
 }
 
 export function SiteHeader({ activeSection, onNavigate, dataSource }: SiteHeaderProps) {
@@ -60,6 +60,11 @@ export function SiteHeader({ activeSection, onNavigate, dataSource }: SiteHeader
         {dataSource === "api" && (
           <span className="ml-2 rounded border border-cyan-muted/50 px-1.5 py-0.5 font-mono text-[9px] tracking-wider text-cyan-bright">
             LIVE API
+          </span>
+        )}
+        {dataSource === "offline" && (
+          <span className="rounded border border-border-panel px-1.5 py-0.5 font-mono text-[9px] text-text-muted">
+            API OFFLINE
           </span>
         )}
       </div>

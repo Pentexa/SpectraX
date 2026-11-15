@@ -8,14 +8,21 @@ import type { ApiError } from "./types";
  * - The consumer (`useObservatoryData`) falls back to mock data on failure.
  */
 
-export const API_BASE_URL: string =
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
+export const API_BASE_URL = "/science";
 
 export const REQUEST_TIMEOUT_MS = 4000;
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+interface RequestOptions {
+  timeout?: number;
+  signal?: AbortSignal;
+}
+
+async function request<T>(path: string, init?: RequestInit, options: RequestOptions = {}): Promise<T> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const abort = () => controller.abort();
+  options.signal?.addEventListener("abort", abort, { once: true });
+  if (options.signal?.aborted) abort();
+  const timer = setTimeout(abort, options.timeout ?? REQUEST_TIMEOUT_MS);
 
   let response: Response;
   try {
@@ -35,12 +42,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } satisfies ApiError;
   } finally {
     clearTimeout(timer);
+    options.signal?.removeEventListener("abort", abort);
   }
 
   if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
     throw {
       status: response.status,
-      message: `Backend returned error: ${response.status} ${response.statusText}`,
+      message: payload?.error?.message ?? `Backend returned error: ${response.status} ${response.statusText}`,
     } satisfies ApiError;
   }
 
@@ -48,15 +57,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const apiClient = {
-  get<T>(path: string): Promise<T> {
-    return request<T>(path);
+  get<T>(path: string, options?: RequestOptions): Promise<T> {
+    return request<T>(path, undefined, options);
   },
 
-  post<T>(path: string, body: unknown): Promise<T> {
+  post<T>(path: string, body: unknown, options?: RequestOptions): Promise<T> {
     return request<T>(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    });
+    }, options);
   },
 };

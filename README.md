@@ -46,25 +46,40 @@ src/
 ## Getting started
 
 ```bash
-# Frontend (Next.js + Tailwind v4)
-npm install
-npm run dev            # http://localhost:3000
+# From the separate SpectraX backend checkout
+planet-x-data --include-cubes --include-benchmarks
+planet-x-api
 
-# Backend (FastAPI — reference)
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload   # http://localhost:8000
+# From this frontend checkout
+npm ci
+npm run dev
 ```
 
 ## Backend integration
 
-- The frontend fetches data from the **FastAPI** `GET /api/v1/snapshot` endpoint.
-- Base URL: `NEXT_PUBLIC_API_URL` (see `.env.local.example` — default
-  `http://localhost:8000`).
-- When the backend is unreachable, the app **transparently falls back to mock
-  data** (`src/lib/api/mock.ts`). A `MOCK DATA` / `LIVE API` badge is shown in
-  the header.
-- API contract: `src/lib/api/types.ts` ↔ `backend/main.py`.
+Set `SPECTREX_API_URL` before building and starting Next.js. The default is
+`http://127.0.0.1:8765`. The browser calls the same-origin Next.js proxy,
+which forwards science requests to the SpectraX FastAPI service.
+
+The dashboard loads the five challenge targets from FastAPI and opens the
+prepared WISE 0855 or Epsilon Indi B pair when available. The observation
+archive accepts a date range, release and wavelength. The comparison panel
+supports side-by-side viewing, blinking, subtraction, summing and stacking
+with backend quality checks.
+
+The spectral panel loads calibrated DR1 channels on demand. It displays
+missing channels and can show the selected channel as a sky image. Source
+photometry from individual visits is displayed separately, as are AAVSO
+optical reference curves for the two variable targets. Gaia DR3 and AllWISE
+can be projected onto the image grid or the Aladin atlas.
+
+Copy a share link or iframe from the coordinate panel. The `/embed` route
+accepts a target or RA/Dec with the field width and optional epoch IDs.
+Imported epoch IDs refer to the connected backend. Host the frontend and
+configure its backend URL to share an embed outside your local machine.
+
+The active contract is in `src/lib/api/science.ts`. An unavailable API shows
+a retry action and measured results include the archive's quality information.
 
 ## Code standards
 

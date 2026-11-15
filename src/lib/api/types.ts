@@ -51,7 +51,7 @@ export interface ObservatorySnapshot {
   mission: MissionInfo;
 }
 
-export type DataSource = "loading" | "api" | "mock";
+export type DataSource = "loading" | "api" | "mock" | "offline";
 
 export type DiffMode = "diff" | "movers" | "anomalies";
 

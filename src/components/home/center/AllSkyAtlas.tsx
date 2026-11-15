@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAnimationClock, type AnimationClock } from "@/hooks/useAnimationClock";
-import { bandWavelength } from "@/lib/constants/bands";
-import { getEpochLabel } from "@/lib/constants/epochs";
+import type { SkyField } from "@/lib/api/science";
+import type { SkyMark } from "../science/FitsImage";
 import { parseDecDMS, parseRAhms } from "@/lib/astronomy/coords";
 import { useDashboardStore } from "@/store/dashboardStore";
 import type { AladinInstance } from "@/types/aladin";
@@ -183,7 +183,12 @@ const MARKER_SELECT_DISTANCE_PX = 80;
  * their selection/diff-mode styling are drawn as a lightweight HTML overlay
  * projected with `world2pix` — no Aladin object churn.
  */
-export function AllSkyAtlas({ clock }: { clock: AnimationClock }) {
+export function AllSkyAtlas({ clock, onTarget, field, catalogMarks }: {
+  clock: AnimationClock;
+  onTarget?: (id: string) => void;
+  field: SkyField;
+  catalogMarks: SkyMark[];
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const aladinElRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -199,11 +204,8 @@ export function AllSkyAtlas({ clock }: { clock: AnimationClock }) {
 
   const stars = useDashboardStore((s) => s.data?.stars ?? []);
   const selectedStarId = useDashboardStore((s) => s.selectedStarId);
-  const selectedBand = useDashboardStore((s) => s.selectedBand);
-  const activeEpoch = useDashboardStore((s) => s.activeEpoch);
-  const diffMode = useDashboardStore((s) => s.diffMode);
-  const setSelectedBand = useDashboardStore((s) => s.setSelectedBand);
-  const selectStar = useDashboardStore((s) => s.selectStar);
+  const storeSelect = useDashboardStore((s) => s.selectStar);
+  const selectStar = onTarget ?? storeSelect;
 
   /** Resolve each catalog star to J2000 degrees once. */
   const coords = useMemo(() => {
@@ -359,6 +361,12 @@ export function AllSkyAtlas({ clock }: { clock: AnimationClock }) {
     };
   }, [retryToken]);
 
+  useEffect(() => {
+    if (status !== "ready") return;
+    imRef.current?.gotoRaDec?.(field.ra, field.dec);
+    imRef.current?.setFoV?.(field.fov);
+  }, [status, field]);
+
   /* ---- Marker DOM nodes ---- */
   useEffect(() => {
     const overlay = overlayRef.current;
@@ -381,12 +389,20 @@ export function AllSkyAtlas({ clock }: { clock: AnimationClock }) {
       overlay.appendChild(el);
       nodes.push({ id: star.id, ra: coord.ra, dec: coord.dec, el });
     }
+    for (const mark of catalogMarks) {
+      const el = document.createElement("div");
+      el.className = "pointer-events-none absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border";
+      el.style.borderColor = mark.color;
+      el.title = mark.label;
+      overlay.appendChild(el);
+      nodes.push({ id: mark.id, ra: mark.ra, dec: mark.dec, el });
+    }
     markersRef.current = nodes;
 
     return () => {
       for (const marker of nodes) marker.el.remove();
     };
-  }, [stars, coords]);
+  }, [stars, coords, catalogMarks]);
 
   /* ---- Selected / diff-mode styling ---- */
   useEffect(() => {
@@ -396,14 +412,8 @@ export function AllSkyAtlas({ clock }: { clock: AnimationClock }) {
       marker.el.classList.toggle("!w-4", isSelected);
       marker.el.classList.toggle("!bg-cyan-bright/60", isSelected);
       marker.el.classList.toggle("!border-white/90", isSelected);
-      marker.el.classList.toggle("animate-pulse", diffMode === "movers");
-      marker.el.classList.toggle("!rounded-none", diffMode === "anomalies");
-      marker.el.classList.toggle(
-        "!border-dashed",
-        diffMode === "anomalies",
-      );
     }
-  }, [selectedStarId, diffMode]);
+  }, [selectedStarId, catalogMarks]);
 
   /* ---- Per-frame projection: catalog markers ---- */
   useAnimationClock(clock, () => {
@@ -449,6 +459,7 @@ export function AllSkyAtlas({ clock }: { clock: AnimationClock }) {
 
     let best: { id: string; distance: number } | null = null;
     for (const marker of markersRef.current) {
+      if (!marker.el.dataset.starId || marker.el.style.opacity !== "1") continue;
       const markerRect = marker.el.getBoundingClientRect();
       const mx = markerRect.left - rect.left + markerRect.width / 2;
       const my = markerRect.top - rect.top + markerRect.height / 2;
@@ -459,8 +470,6 @@ export function AllSkyAtlas({ clock }: { clock: AnimationClock }) {
     }
     if (best) selectStar(best.id);
   };
-
-  const overlayOpacity = 0.25 + 0.75 * (selectedBand / 102);
 
   return (
     <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[3px] border border-border-panel bg-gradient-to-b from-[rgba(20,29,39,0.94)] to-[rgba(15,22,30,0.96)]">
@@ -489,7 +498,6 @@ export function AllSkyAtlas({ clock }: { clock: AnimationClock }) {
         <div
           ref={overlayRef}
           className="pointer-events-none absolute inset-0 z-[3]"
-          style={{ opacity: overlayOpacity }}
         />
 
         {/* Tile-stream degraded notice (atlas itself stays usable) */}
@@ -532,38 +540,9 @@ export function AllSkyAtlas({ clock }: { clock: AnimationClock }) {
         )}
       </div>
 
-      <div className="border-t border-border-subtle bg-[#0e141c] px-3.5 pb-2.5 pt-2.5">
-        <div className="mb-2 flex items-center gap-2.5">
-          <input
-            type="range"
-            min={1}
-            max={102}
-            value={selectedBand}
-            aria-label="Spectral Band Slider"
-            className="band-range flex-1"
-            onChange={(e) => setSelectedBand(Number(e.target.value))}
-          />
-          <svg
-            className="h-4 w-4 flex-shrink-0 text-[#8296ab]"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.6"
-          >
-            <path d="M3 7l12-4 3 8-12 4z" />
-            <path d="M10 13l-2 8" />
-            <path d="M12 13l3 8" />
-            <circle cx="17" cy="6" r="1.5" />
-          </svg>
-        </div>
-        <div className="text-[11px] tracking-[0.01em] text-[#8597aa]">
-          Interactive all-sky atlas — Aladin Lite (CDS). Drag to pan, wheel to zoom.
-          <span className="ml-2 font-mono text-cyan-bright">
-            {getEpochLabel(activeEpoch)} • Band {selectedBand} —{" "}
-            {bandWavelength(selectedBand).toFixed(2)} μm
-          </span>
-        </div>
-      </div>
+      <p className="border-t border-border-subtle bg-[#0e141c] px-3.5 py-2.5 text-[11px] text-[#8597aa]">
+        DSS background via Aladin Lite. Drag to pan, scroll to zoom.
+      </p>
     </section>
   );
 }

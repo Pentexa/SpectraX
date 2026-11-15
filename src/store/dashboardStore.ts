@@ -1,6 +1,5 @@
 import { create } from "zustand";
-import { getObservatorySnapshot } from "@/lib/api/endpoints";
-import { fetchMockSnapshot } from "@/lib/api/mock";
+import { scienceApi, type ScienceTarget } from "@/lib/api/science";
 import type { DataSource, DiffMode, ObservatorySnapshot } from "@/lib/api/types";
 
 interface DashboardState {
@@ -8,6 +7,7 @@ interface DashboardState {
   data: ObservatorySnapshot | null;
   source: DataSource;
   loadError: string | null;
+  targets: ScienceTarget[];
 
   /* --- UI state --- */
   selectedStarId: string;
@@ -31,8 +31,9 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
   data: null,
   source: "loading",
   loadError: null,
+  targets: [],
 
-  selectedStarId: "barnard",
+  selectedStarId: "wise-0855",
   selectedBand: 18,
   activeBands: Array.from({ length: 12 }, (_, i) => 86 + i),
   activeEpoch: 0,
@@ -42,25 +43,31 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
   loadData: async () => {
     set({ source: "loading", loadError: null });
     try {
-      const data = await getObservatorySnapshot();
+      const { targets } = await scienceApi.targets();
       const current = get();
-      const starExists = data.stars.some((s) => s.id === current.selectedStarId);
+      const starExists = targets.some((target) => target.id === current.selectedStarId);
       set({
-        data,
+        targets,
+        data: {
+          stars: targets.map((target) => ({
+            id: target.id, name: target.name, ra: target.ra.toFixed(6), dec: target.dec.toFixed(6),
+            deltaMag: target.benchmark_available ? "Measured" : "Archive",
+            distance: "—", magnitude: "—", delta: "—", raDrift: "—", decDrift: "—",
+            properMotion: `${Math.hypot(target.pm_ra_cosdec_mas_yr, target.pm_dec_mas_yr).toFixed(1)} mas/yr`,
+            parallax: `${target.parallax_mas.toFixed(1)} mas`, delta13: "—", mas: "—", spectralSeed: 1,
+          })),
+          candidates: [],
+          mission: {
+            name: "SPHEREx", agency: "NASA", instrument: "SPHEREx", bandCount: 102,
+            wavelengthRange: [0.75, 5], epochIntervalMonths: 6, currentYear: 2026,
+          },
+        },
         source: "api",
-        selectedStarId: starExists ? current.selectedStarId : data.stars[0]?.id,
+        selectedStarId: starExists ? current.selectedStarId : targets[0]?.id ?? "",
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const data = await fetchMockSnapshot();
-      const current = get();
-      const starExists = data.stars.some((s) => s.id === current.selectedStarId);
-      set({
-        data,
-        source: "mock",
-        loadError: message,
-        selectedStarId: starExists ? current.selectedStarId : data.stars[0]?.id,
-      });
+      const message = error && typeof error === "object" && "message" in error ? String(error.message) : String(error);
+      set({ source: "offline", loadError: message });
     }
   },
 

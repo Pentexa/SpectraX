@@ -29,6 +29,8 @@ export interface AladinInstance {
   on: (event: string, handler: (payload?: unknown) => void) => void;
   remove: () => void;
   getSize: () => [number, number];
+  gotoRaDec?: (ra: number, dec: number) => void;
+  setFoV?: (degrees: number) => void;
 }
 
 declare module "aladin-lite" {
