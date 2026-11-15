@@ -1,5 +1,7 @@
 # Planet X × SPHEREx Backend
 
+Nisanur Çakır
+
 FastAPI service for comparing public SPHEREx observations on a common celestial grid and sampling a calibrated DR1 spectral cube. The manifest includes DR1 and QR3 observations of a small field near Barnard's Star and tracks the publication status of DR2 and DR3.
 
 ## Local setup
