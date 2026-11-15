@@ -100,7 +100,7 @@ jobs:
           jq -e '.status == "ok"' "$RUNNER_TEMP/backend-health.json"
           curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8765/openapi.json \
             --output "$RUNNER_TEMP/backend-openapi.json"
-          jq -e '.paths | has("/api/compare") and has("/api/spectrum") and has("/api/releases") and has("/api/archive/import")' \
+          jq -e '.paths | has("/api/compare") and has("/api/spectrum") and has("/api/releases") and has("/api/archive/import") and has("/api/targets") and has("/api/source-series")' \
             "$RUNNER_TEMP/backend-openapi.json"
           smoke_args=(--wide-sky)
           if [[ "$GITHUB_REF_TYPE" == tag ]]; then

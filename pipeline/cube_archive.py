@@ -17,7 +17,8 @@ from pipeline.import_storage import QUOTA_ERROR, ImportQuota, file_write_lock
 from pipeline.spectra import open_cube
 
 HEALPIX = HEALPix(nside=32, order="nested", frame="icrs")
-DR1_ROOT = "https://nasa-irsa-spherex.s3.us-east-1.amazonaws.com/dr1/hips5_cube/hips_20261026/Norder5"
+DR1_ROOT = "https://nasa-irsa-spherex.s3.us-east-1.amazonaws.com/dr1/hips5_cube"
+DEFAULT_DR1_REVISION = "hips_20261026"
 TILE_EPOCH = re.compile(r"dr1-npix(0|[1-9][0-9]{0,4})")
 FILENAME = "cube.fits"
 METADATA = "cube.json"
@@ -37,14 +38,13 @@ def tile_from_epoch(epoch: str) -> int | None:
     return tile if tile < HEALPIX.npix else None
 
 
-def _tile_url(tile):
-    return f"{DR1_ROOT}/Dir{tile // 10000 * 10000}/Npix{tile}_cube.fits"
-
-
 class CubeCache:
-    def __init__(self, directory: Path, limit_bytes: int):
-        self.directory = directory
-        self.quota = ImportQuota(directory, limit_bytes, epoch_pattern=TILE_EPOCH, filenames=(FILENAME, METADATA))
+    def __init__(self, directory: Path, limit_bytes: int, revision: str = DEFAULT_DR1_REVISION):
+        if not re.fullmatch(r"hips_[0-9]{8}", revision):
+            raise ValueError("PLANET_X_DR1_CUBE_REVISION must have format hips_YYYYMMDD")
+        self.directory = directory if revision == DEFAULT_DR1_REVISION else directory / revision
+        self.revision = revision
+        self.quota = ImportQuota(self.directory, limit_bytes, epoch_pattern=TILE_EPOCH, filenames=(FILENAME, METADATA))
 
     def _lock_path(self, epoch: str) -> Path:
         return self.directory / ".locks" / f"{epoch}.sqlite3"
@@ -76,7 +76,7 @@ class CubeCache:
                     raise
 
     def _fetch(self, tile: int, pending: Path) -> Cube:
-        url = _tile_url(tile)
+        url = f"{DR1_ROOT}/{self.revision}/Norder5/Dir{tile // 10000 * 10000}/Npix{tile}_cube.fits"
 
         def download(deadline):
             digest = hashlib.sha256()

@@ -25,9 +25,14 @@ The last command starts the server at [localhost:8765](http://127.0.0.1:8765/doc
 | `GET /api/datasets` | Observation IDs, dates, bands, quality policy, and provenance. Optional `release` filters by ID, case-insensitively. Unpublished releases return empty product lists. |
 | `GET /api/archive/search` | Find IRSA spectral images in the DR1 or QR3 wide survey. Accepts `ra`, `dec`, `release`, `radius_deg`, `limit`, `wavelength_um`, `start_mjd`, and `end_mjd`. |
 | `POST /api/archive/import` | Download and register a calibrated DR1 or QR3 exposure cutout. The JSON body contains `archive_id`, `ra`, `dec`, and `fov`. |
+| `GET /api/targets` | Return the five challenge targets with catalog references and predicted ICRS positions at optional UTC `mjd`. |
+| `GET /api/targets/{target_id}/observations` | Find real IRSA exposures for a target and return a predicted position for each exposure midpoint. Supports the release, date, and wavelength search filters. |
+| `GET /api/catalog/{catalog}` | Query real Gaia DR3 (`gaia`) or AllWISE (`wise`) sources by `ra`, `dec`, `radius_deg`, and `limit`. |
 | `GET /api/compare` | `ra`, `dec`, `fov`, `epoch_a`, `epoch_b`, and `mode` (`difference`, `side_by_side`, `sum`, or `stack`). Returns aligned A and B, arithmetic result where supported, WCS, validity fractions, flags, and variance-derived values when available. |
+| `POST /api/compare/auto` | Choose a compatible difference pair from 2–8 imported `epochs`, `ra`, `dec`, `fov`, and optional `min_gap_days`. Tries up to six pairs in descending time separation. |
 | `GET /api/spectrum` | `ra`, `dec`, and optional `epoch`. Omitting `epoch` locates the DR1 tile at the coordinate. Returns 102 ordered channel slots, with `null` flux for invalid or uncovered channels. |
 | `GET /api/photometry` | `ra`, `dec`, and one image `epoch`. Fits a point source at the supplied position and returns flux density and statistical error in µJy, observation and bandpass metadata, and quality flags. |
+| `POST /api/source-series` | Measure 1–24 image `epochs` at `ra` and `dec` or a catalog `target_id`. Returns detector samples by visit, compatible light curves, and per-exposure errors. |
 | `GET /api/layers` | `epoch`. Returns the six detector groups and their channel ranges. |
 | `GET /api/layers/{detector}` | `ra`, `dec`, `fov`, optional `epoch`, and optional `channel` (1–17, default 9). Returns a cutout of one calibrated channel and its flags within the selected tile. |
 
@@ -65,6 +70,12 @@ Difference is `B − A`, and stack is the two-sample mean. Arithmetic requires c
 Photometry uses the local FITS ePSF through Photutils and fits its amplitude and a constant background on the native exposure pixels. It estimates pixel solid angle from the local WCS. Wavelength and bandwidth come from the FITS wavelength lookup. The error includes statistical variance. Crowding, pointing error, and calibration systematics can affect the estimate. `quality_flags` includes `low_snr` below SNR 5, `high_residual` above reduced χ² 5, and `masked_fit_pixels` when pixels were excluded. Signed flux estimates at low SNR are available for statistical analysis. `photometry_unavailable` (HTTP 409) covers missing calibration, clipped fit windows and masked source cores. [IRSA ePSF format](https://caltech-ipac.github.io/irsa-tutorials/spherex-psf/) · [IRSA photometry method](https://irsa.ipac.caltech.edu/onlinehelp/spherex/spherex/sp.html)
 
 Coordinate-only spectrum and layer requests select an ICRS HEALPix tile in the official DR1 archive. The first request for a tile can download about 321 MB. It verifies the tile identifier and FITS structure and records the SHA-256 of the received file. Later calls can use the returned epoch or the coordinate. `PLANET_X_CUBE_CACHE_DIR` defaults to `cubes` under the import directory. `PLANET_X_CUBE_CACHE_BYTES` defaults to 2 GiB, with older idle tiles evicted as needed. An uncached request can receive `cube_busy` (503) while another tile is downloading. [IRSA FITS cube tutorial](https://caltech-ipac.github.io/irsa-tutorials/spherex-hipscube/)
+
+Set `PLANET_X_DR1_CUBE_REVISION` to a newer supported IRSA `hips_YYYYMMDD` directory when IRSA republishes the DR1 tiles with the same layout. The new revision uses a separate cache directory. Newly indexed exposures appear in DR1 and QR3 searches directly from IRSA.
+
+For a shareable view, keep `ra`, `dec`, `fov`, catalog/release, and the two upstream `archive_id` values in the frontend URL. If the selected cuts are absent in the current backend instance, import each archive ID using its saved cutout center before drawing the view. The spectrum endpoint works with coordinates alone. Catalog overlays report their native reference frame and Gaia's epoch. Target positions are geocentric catalog predictions and are evaluated at each image's observation midpoint.
+
+The source series groups measured detector samples by exposure visit. Light curves use matching detector, calibration, and local wavelength. A change is provided when two compatible samples pass the SNR and residual checks. Weighted means can include signed low-SNR samples and exclude high-residual fits. The [challenge target report](docs/benchmarks/CHALLENGE_TARGETS.md) records the data and quality outcomes from real observations.
 
 ## Tests and data
 

@@ -39,11 +39,14 @@ def require(condition: bool, message: str):
         raise RuntimeError(message)
 
 
-def import_irsa_exposure(base_url: str, archive_id: str, **coverage):
-    request = Request(base_url + "/api/archive/import",
-                      data=json.dumps(dict(coverage, archive_id=archive_id)).encode(),
+def post_json(base_url: str, path: str, *, timeout: int = 20, **payload):
+    request = Request(base_url + "/api/" + path, data=json.dumps(payload).encode(),
                       headers={"Content-Type": "application/json"}, method="POST")
-    status, imported = request_json(request, timeout=110)
+    return request_json(request, timeout)
+
+
+def import_irsa_exposure(base_url: str, archive_id: str, **coverage):
+    status, imported = post_json(base_url, "archive/import", timeout=110, archive_id=archive_id, **coverage)
     require(status == 201 and imported["available_locally"], f"Expected a fresh import of {archive_id}")
     return imported
 
@@ -59,6 +62,9 @@ def verify(base_url: str):
     qr3 = get_json(base_url, "datasets", release="QR3")
     require([item["epoch"] for item in qr3["observations"]] == [QR3_EPOCH] and not qr3["cubes"],
             "Unexpected QR3 products")
+    targets = get_json(base_url, "targets")["targets"]
+    require({item["id"] for item in targets} == {"barnard", "epsilon-indi-b", "wise-0855", "rw-aurigae", "r-draconis"},
+            "Unexpected challenge target list")
 
     comparison = get_json(base_url, "compare", **POSITION, fov=0.04, epoch_a=EPOCH_A, epoch_b=EPOCH_B,
                           mode="difference")
@@ -71,6 +77,9 @@ def verify(base_url: str):
     grid = comparison["grid"]
     center = comparison["images"]["result"][grid["height"] // 2][grid["width"] // 2]
     require(math.isclose(center, measurement["difference"], abs_tol=1e-10), "Difference image and measurement disagree")
+    _, automatic = post_json(base_url, "compare/auto", **POSITION, fov=0.04, epochs=[EPOCH_B, EPOCH_A])
+    require(automatic["measurement"] == measurement and automatic["selection"]["elapsed_days"] > 160,
+            "Automatic pair selection did not reproduce the verified real-data difference")
 
     cross_release = get_json(base_url, "compare", **POSITION, fov=0.04, epoch_a=EPOCH_A, epoch_b=QR3_EPOCH,
                              mode="side_by_side")
@@ -83,6 +92,9 @@ def verify(base_url: str):
     require(math.isclose(photometry["flux_density_ujy"], 1428.9, rel_tol=0.02), "Unexpected DR1 ePSF flux")
     require(math.isclose(photometry["statistical_error_ujy"], 53.18, rel_tol=0.02), "Unexpected DR1 ePSF flux error")
     require(photometry["snr"] > 20 and photometry["reduced_chi_square"] < 5, "Unreliable DR1 reference fit")
+    _, series = post_json(base_url, "source-series", **PHOTOMETRY_TARGET, epochs=[EPOCH_B, EPOCH_A])
+    require([item["epoch"] for item in series["samples"]] == [EPOCH_A, EPOCH_B]
+            and series["samples"][0]["photometry"] == photometry, "Unexpected source time series")
 
     spectrum = get_json(base_url, "spectrum", **POSITION, epoch=CUBE)
     channels = spectrum["channels"]

@@ -1,6 +1,7 @@
 import os
 from contextlib import asynccontextmanager, contextmanager
 from functools import lru_cache
+from itertools import combinations
 from pathlib import Path
 from typing import Annotated
 
@@ -10,17 +11,21 @@ from fastapi import FastAPI, Path as RoutePath, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import Field, FiniteFloat
 
 from pipeline.archive import ArchiveRelease, ArchiveSearch, search_images
 from pipeline.catalog import Cube, DataError, Position, data_path, load_manifest
+from pipeline.catalog_overlays import Overlay, query_overlay
 from pipeline.compare import Mode, compare
-from pipeline.cube_archive import DEFAULT_CACHE_BYTES, CubeCache, tile_at, tile_from_epoch
+from pipeline.cube_archive import DEFAULT_CACHE_BYTES, DEFAULT_DR1_REVISION, CubeCache, tile_at, tile_from_epoch
 from pipeline.exposures import ImportRequest, get_import, import_exposure, list_imports
 from pipeline.images import read_image
 from pipeline.import_storage import DEFAULT_IMPORT_QUOTA_BYTES, ImportQuota
 from pipeline.ingest import ROOT, configured_path
 from pipeline.photometry import Photometry, measure_source
+from pipeline.source_series import EpochId, SourceSeriesRequest, source_series
 from pipeline.spectra import detector_layer, layers, spectrum
+from pipeline.targets import DEFAULT_TARGET_MJD, TARGETS, get_target
 
 Epoch = Annotated[str, Query(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_.-]+$")]
 RightAscension = Annotated[float, Query(ge=0, lt=360, description="ICRS right ascension in degrees")]
@@ -28,6 +33,13 @@ Declination = Annotated[float, Query(ge=-90, le=90, description="ICRS declinatio
 Fov = Annotated[float, Query(gt=0, le=1, description="Square cutout width in degrees")]
 ReleaseFilter = Annotated[str, Query(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_.-]+$")]
 ArchiveDate = Annotated[float, Query(ge=0, le=100_000, description="UTC Modified Julian Date")]
+TargetDate = Annotated[float, Query(ge=60_000, le=70_000, description="UTC Modified Julian Date")]
+
+
+class AutoCompareRequest(Position):
+    fov: FiniteFloat = Field(gt=0, le=1)
+    epochs: list[EpochId] = Field(min_length=2, max_length=8)
+    min_gap_days: FiniteFloat = Field(default=1, gt=0, le=3650)
 
 
 def positive_setting(name: str, default: int) -> int:
@@ -48,7 +60,8 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
     import_dir = import_dir or Path(os.environ.get('PLANET_X_IMPORT_DIR', data_dir / 'imports'))
     import_quota = ImportQuota(import_dir, positive_setting('PLANET_X_IMPORT_QUOTA_BYTES', DEFAULT_IMPORT_QUOTA_BYTES))
     cube_dir = Path(os.environ.get('PLANET_X_CUBE_CACHE_DIR', import_dir / 'cubes'))
-    cube_cache = CubeCache(cube_dir, positive_setting('PLANET_X_CUBE_CACHE_BYTES', DEFAULT_CACHE_BYTES))
+    cube_revision_name = os.environ.get('PLANET_X_DR1_CUBE_REVISION', DEFAULT_DR1_REVISION)
+    cube_cache = CubeCache(cube_dir, positive_setting('PLANET_X_CUBE_CACHE_BYTES', DEFAULT_CACHE_BYTES), cube_revision_name)
 
     @asynccontextmanager
     async def lifespan(api: FastAPI):
@@ -145,6 +158,43 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
                                 *list_imports(import_dir)],
         )
 
+    @api.get('/api/targets')
+    def targets(mjd: TargetDate = DEFAULT_TARGET_MJD):
+        return {'targets': [target.metadata(mjd) for target in TARGETS.values()]}
+
+    @api.get('/api/catalog/{catalog}')
+    def catalog_overlay(catalog: Overlay, ra: RightAscension, dec: Declination,
+                        radius_deg: Annotated[float, Query(gt=0, le=1)] = 0.05,
+                        limit: Annotated[int, Query(ge=1, le=200)] = 100):
+        return query_overlay(catalog, ra, dec, radius_deg, limit)
+
+    @api.get('/api/targets/{target_id}/observations')
+    def target_observations(target_id: str, release: ArchiveRelease = 'DR1',
+                            start_mjd: TargetDate | None = None, end_mjd: TargetDate | None = None,
+                            wavelength_um: Annotated[float, Query(gt=0, le=10)] | None = None,
+                            limit: Annotated[int, Query(ge=1, le=100)] = 30):
+        target = get_target(target_id)
+        supplied_times = [time for time in (start_mjd, end_mjd) if time is not None]
+        center_mjd = sum(supplied_times) / len(supplied_times) if supplied_times else DEFAULT_TARGET_MJD
+        center = target.position(center_mjd)
+        archive = search_images(
+            release=release, ra=center.ra.deg, dec=center.dec.deg, radius_deg=0.015, limit=limit,
+            wavelength_um=wavelength_um, start_mjd=start_mjd, end_mjd=end_mjd,
+            local_observations=[*((item, data_dir) for item in api.state.manifest.observations), *list_imports(import_dir)],
+        )
+        observations = []
+        for item in sorted(archive.observations, key=lambda item: item.observation_start_mjd or float('inf')):
+            record = item.model_dump(mode='json')
+            if item.observation_start_mjd is not None and item.observation_end_mjd is not None:
+                mjd = (item.observation_start_mjd + item.observation_end_mjd) / 2
+                position = target.position(mjd)
+                record['predicted_position'] = {'ra': position.ra.deg, 'dec': position.dec.deg, 'mjd': mjd}
+            else:
+                record['predicted_position'] = None
+            observations.append(record)
+        return {'target': target.metadata(center_mjd), 'archive': archive.model_dump(exclude={'observations'}),
+                'observations': observations}
+
     @api.post('/api/archive/import', status_code=201, responses={
         200: {'description': 'Existing cutout'}, 507: {'description': 'Imported exposure storage quota exceeded'},
     })
@@ -153,16 +203,45 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
         response.status_code = 201 if created else 200
         return observation.metadata(directory)
 
-    @api.get('/api/compare')
-    def compare_epochs(ra: RightAscension, dec: Declination, fov: Fov, epoch_a: Epoch, epoch_b: Epoch,
-                       mode: Mode = 'difference'):
-        a, directory_a = require_observation(epoch_a)
-        b, directory_b = require_observation(epoch_b)
+    def compare_observations(position: Position, mode: Mode, first, second):
+        a, directory_a = first
+        b, directory_b = second
         image_a, image_b = read_image(directory_a, a), read_image(directory_b, b)
-        result = compare(Position(ra=ra, dec=dec, fov=fov), mode, a, b, image_a, image_b)
+        result = compare(position, mode, a, b, image_a, image_b)
         result['epochs'] = {'a': a.metadata(directory_a) | {'fits': image_a.metadata},
                             'b': b.metadata(directory_b) | {'fits': image_b.metadata}}
         return result
+
+    @api.get('/api/compare')
+    def compare_epochs(ra: RightAscension, dec: Declination, fov: Fov, epoch_a: Epoch, epoch_b: Epoch,
+                       mode: Mode = 'difference'):
+        return compare_observations(Position(ra=ra, dec=dec, fov=fov), mode,
+                                    require_observation(epoch_a), require_observation(epoch_b))
+
+    @api.post('/api/compare/auto')
+    def compare_automatically(request: AutoCompareRequest):
+        if len(set(request.epochs)) != len(request.epochs):
+            raise DataError('invalid_request', 'Each epoch must be specified once')
+        observations = sorted((require_observation(epoch) for epoch in request.epochs),
+                              key=lambda item: item[0].observation_start_mjd)
+        pairs = []
+        for first, second in combinations(observations, 2):
+            a, b = first[0], second[0]
+            gap = b.observation_start_mjd - a.observation_start_mjd
+            if (gap >= request.min_gap_days and a.observation_id != b.observation_id
+                    and (a.source, a.band, a.detector, a.calibration) == (b.source, b.band, b.detector, b.calibration)):
+                pairs.append((gap, first, second))
+        attempts = []
+        for gap, first, second in sorted(pairs, key=lambda item: item[0], reverse=True)[:6]:
+            try:
+                result = compare_observations(request, 'difference', first, second)
+            except DataError as exc:
+                attempts.append({'epoch_a': first[0].epoch, 'epoch_b': second[0].epoch, 'error': exc.code})
+                continue
+            result['selection'] = {'elapsed_days': gap, 'candidate_pairs': len(pairs), 'rejected_pairs': attempts}
+            return result
+        raise DataError('no_compatible_pair', 'No pair passed the time, calibration, and image compatibility checks', 422,
+                        details={'candidate_pairs': len(pairs), 'attempts': attempts})
 
     def get_cube(epoch: str) -> Cube:
         cube = api.state.cubes.get(epoch)
@@ -178,6 +257,7 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
             tile = tile_at(ra, dec)
             for cube in api.state.cubes.values():
                 if (cube.release == 'DR1' and cube.observation_id == f'Npix{tile}_cube'
+                        and f'/{cube_revision_name}/' in str(cube.access)
                         and (data_dir / cube.filename).is_file()):
                     yield data_dir, cube
                     return
@@ -198,6 +278,10 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
             raise DataError('photometry_unavailable', 'Source photometry requires a single exposure epoch', 409)
         observation, directory = require_observation(epoch)
         return measure_source(directory, observation, ra, dec)
+
+    @api.post('/api/source-series')
+    def get_source_series(request: SourceSeriesRequest):
+        return source_series(request, require_observation)
 
     def cube_revision(cube: Cube) -> tuple[int, int]:
         stat = data_path(data_dir, cube).stat()

@@ -254,6 +254,27 @@ def test_archive_import_from_discovery_through_science_and_restart(irsa, tmp_pat
         assert result["measurement"]["difference"] == pytest.approx(0.024914 if real_samples else 1.0, abs=1e-4)
         assert result["measurement"]["uncertainty"] > 0
 
+        automatic = client.post("/api/compare/auto", json={
+            **CENTER, "fov": 0.04, "epochs": [second["epoch"], first["epoch"]],
+        })
+        assert automatic.status_code == 200, automatic.text
+        assert automatic.json()["epochs"]["a"]["epoch"] == first["epoch"]
+        assert automatic.json()["epochs"]["b"]["epoch"] == second["epoch"]
+        assert automatic.json()["measurement"] == result["measurement"]
+        assert automatic.json()["selection"]["elapsed_days"] > 160
+
+        coordinates = {"ra": 269.448214, "dec": 4.695946} if real_samples else CENTER
+        series = client.post("/api/source-series", json={**coordinates, "epochs": [second["epoch"], first["epoch"]]})
+        assert series.status_code == 200, series.text
+        samples = series.json()["samples"]
+        assert [sample["epoch"] for sample in samples] == [first["epoch"], second["epoch"]]
+        assert len(series.json()["visits"]) == 2
+        assert samples[0]["photometry"]["statistical_error_ujy"] > 0
+        if not real_samples:
+            curve = series.json()["light_curves"][0]
+            assert curve["change"]["flux_change_ujy"] > 0
+            assert curve["weighted_mean"]["statistical_error_ujy"] < samples[0]["photometry"]["statistical_error_ujy"]
+
     calls_before_restart = len(server.calls)
     with running_api(irsa, tmp_path) as client:
         repeated = client.post("/api/archive/import", json=payload)
