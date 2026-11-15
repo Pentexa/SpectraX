@@ -8,12 +8,13 @@ import { controlClass, Panel, Status } from "./Panel";
 import { SciencePlot } from "./SciencePlot";
 
 export function SpectrumPanel({ field }: { field: SkyField }) {
+  const { ra, dec } = field;
   const [requested, setRequested] = useState(0);
   const [selected, setSelected] = useState(0);
   const [showBand, setShowBand] = useState(false);
   const [combinedDetector, setCombinedDetector] = useState(0);
   const [showFlags, setShowFlags] = useState(false);
-  const spectrumRequest = useCallback((signal: AbortSignal) => scienceApi.spectrum(field, signal), [field]);
+  const spectrumRequest = useCallback((signal: AbortSignal) => scienceApi.spectrum({ ra, dec }, signal), [ra, dec]);
   const spectrum = useScienceRequest(requested ? spectrumRequest : null, requested);
   const channels = spectrum.data?.channels ?? [];
   const channel = channels[selected];

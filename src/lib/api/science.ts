@@ -262,7 +262,7 @@ export const scienceApi = {
     apiClient.post<SourceSeries>("/api/source-series", {
       ...(targetId ? { target_id: targetId } : { ra: field.ra, dec: field.dec }), epochs,
     }, { signal, timeout: 20_000 }),
-  spectrum: (field: SkyField, signal: AbortSignal) =>
+  spectrum: (field: Pick<SkyField, "ra" | "dec">, signal: AbortSignal) =>
     apiClient.get<Spectrum>(query("/api/spectrum", { ra: field.ra, dec: field.dec, live: 1 }), { signal, timeout: 270_000 }),
   layer: (field: SkyField, detector: number, channel: number | undefined, epoch: string, signal: AbortSignal) =>
     apiClient.get<SpectralImage>(query(`/api/layers/${detector}`, {

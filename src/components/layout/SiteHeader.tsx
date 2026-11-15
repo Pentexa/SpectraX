@@ -1,15 +1,17 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { NAV_SECTIONS } from "@/lib/constants/nav";
+import { NAV_SECTIONS, type NavSectionId } from "@/lib/constants/nav";
 
 interface SiteHeaderProps {
-  activeSection: string;
-  onNavigate: (sectionId: string) => void;
+  activeSection: NavSectionId;
+  onOpenAtlas?: () => void;
+  spectralHref?: string;
   dataSource?: "loading" | "api" | "mock" | "offline";
 }
 
-export function SiteHeader({ activeSection, onNavigate, dataSource }: SiteHeaderProps) {
+export function SiteHeader({ activeSection, onOpenAtlas, spectralHref, dataSource }: SiteHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const navRef = useRef<HTMLElement | null>(null);
@@ -44,11 +46,11 @@ export function SiteHeader({ activeSection, onNavigate, dataSource }: SiteHeader
   }, [menuOpen]);
 
   return (
-    <header className="relative flex h-[62px] flex-shrink-0 items-center justify-between border-b border-border-subtle bg-gradient-to-b from-[#0f161f] to-[#0c1219] px-[22px]">
+    <header className="relative flex h-[62px] flex-shrink-0 items-center justify-between gap-3 border-b border-border-subtle bg-gradient-to-b from-[#0f161f] to-[#0c1219] px-4 sm:px-[22px]">
       <div className="flex items-center gap-3.5">
-        <h1 className="text-[19px] font-semibold leading-tight tracking-[0.36em] text-[#eef4fa]">
+        <Link href="/" className="text-[19px] font-semibold leading-tight tracking-[0.36em] text-[#eef4fa]">
           SPECTREX
-        </h1>
+        </Link>
         {dataSource === "mock" && (
           <span
             className="ml-2 rounded border border-cyan-muted/50 px-1.5 py-0.5 font-mono text-[9px] tracking-wider text-cyan-bright"
@@ -84,25 +86,31 @@ export function SiteHeader({ activeSection, onNavigate, dataSource }: SiteHeader
       <nav
         ref={navRef}
         id="site-nav"
-        className={`absolute left-0 right-0 top-[62px] z-50 flex-col gap-2.5 border-b border-border-panel bg-[#0f161f] px-5 py-3 md:static md:z-auto md:flex md:flex-row md:items-center md:gap-6 md:border-0 md:bg-transparent md:px-0 md:py-0 ${
+        aria-label="Main navigation"
+        className={`absolute left-0 right-0 top-[62px] z-50 flex-col gap-2.5 border-b border-border-panel bg-[#0f161f] px-5 py-3 md:static md:z-auto md:flex md:flex-row md:items-center md:gap-4 md:border-0 md:bg-transparent md:px-0 md:py-0 lg:gap-6 ${
           menuOpen ? "flex" : "hidden"
         }`}
       >
         {NAV_SECTIONS.map((section) => (
-          <button
+          <Link
             key={section.id}
-            className={`relative cursor-pointer border-0 bg-transparent pb-1.5 pt-1.5 text-[11.5px] font-normal tracking-[0.08em] transition-colors duration-200 ${
+            href={section.id === "spectral" ? spectralHref ?? section.href : section.href}
+            aria-current={activeSection === section.id ? "page" : undefined}
+            className={`relative self-start whitespace-nowrap pb-1.5 pt-1.5 text-[11.5px] font-normal tracking-[0.08em] transition-colors duration-200 ${
               activeSection === section.id
                 ? "text-[#eef5fc] after:absolute after:inset-x-0 after:-bottom-0.5 after:h-px after:bg-cyan after:shadow-[0_0_6px_var(--color-cyan)]"
                 : "text-[#96a7ba] hover:text-[#eef5fc]"
             }`}
-            onClick={() => {
-              onNavigate(section.id);
+            onClick={(event) => {
+              if (section.id === "map" && onOpenAtlas && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+                event.preventDefault();
+                onOpenAtlas();
+              }
               setMenuOpen(false);
             }}
           >
             {section.label}
-          </button>
+          </Link>
         ))}
       </nav>
     </header>

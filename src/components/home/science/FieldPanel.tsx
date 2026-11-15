@@ -4,11 +4,12 @@ import { useState } from "react";
 import type { SkyField } from "@/lib/api/science";
 import { controlClass, inputClass, Panel, Status } from "./Panel";
 
-export function FieldPanel({ field, onCoordinates, onFov, onShare }: {
+export function FieldPanel({ field, onCoordinates, onFov, onShare, allowEmbed = true }: {
   field: SkyField;
   onCoordinates: (coordinates: Pick<SkyField, "ra" | "dec">) => void;
   onFov: (fov: number) => void;
   onShare: (embed: boolean) => string;
+  allowEmbed?: boolean;
 }) {
   const [message, setMessage] = useState("");
   const [shareText, setShareText] = useState("");
@@ -47,9 +48,9 @@ export function FieldPanel({ field, onCoordinates, onFov, onShare }: {
           <button className={controlClass}>Go to coordinates</button>
         </div>
       </form>
-      <div className="mt-2 grid grid-cols-2 gap-2">
+      <div className={`mt-2 grid gap-2 ${allowEmbed ? "grid-cols-2" : "grid-cols-1"}`}>
         <button type="button" className={controlClass} onClick={() => void share(false)}>Copy link</button>
-        <button type="button" className={controlClass} onClick={() => void share(true)}>Copy embed</button>
+        {allowEmbed && <button type="button" className={controlClass} onClick={() => void share(true)}>Copy embed</button>}
       </div>
       {message && <div className="mt-2"><Status>{message}</Status></div>}
       {shareText && <textarea aria-label="Shareable link or embed code" className={`mt-1 w-full break-all ${inputClass}`}

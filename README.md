@@ -13,7 +13,7 @@ src/
 │   ├── page.tsx            # Server component → Dashboard
 │   └── globals.css         # Tailwind v4 @theme tokens
 ├── components/
-│   ├── layout/             # SiteHeader, SiteFooter, InfoModal
+│   ├── layout/             # SiteHeader, SiteFooter, SectionPage
 │   ├── canvas/             # Reusable canvas primitives
 │   │                       #   (MiniStarfield, AstrometryGauge, Sparkline, OrbitDiagram)
 │   └── home/
@@ -72,6 +72,9 @@ missing channels and can show the selected channel as a sky image. Source
 photometry from individual visits is displayed separately, as are AAVSO
 optical reference curves for the two variable targets. Gaia DR3 and AllWISE
 can be projected onto the image grid or the Aladin atlas.
+
+The top bar also links to `/spectral`, a dedicated spectrum workspace with
+shareable coordinates, and to `/research`, `/about`, and `/contact`.
 
 Copy a share link or iframe from the coordinate panel. The `/embed` route
 accepts a target or RA/Dec with the field width and optional epoch IDs.

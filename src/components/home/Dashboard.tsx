@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { SiteFooter } from "@/components/layout/SiteFooter";
-import { InfoModal } from "@/components/layout/InfoModal";
 import { createAnimationClock } from "@/hooks/useAnimationClock";
 import { useScienceRequest } from "@/hooks/useScienceRequest";
 import { archiveCutoutWidth, MAX_TIMELINE_EPOCHS, scienceApi, type ArchiveCutout, type ComparisonMode, type EpochPair, type SkyField } from "@/lib/api/science";
@@ -38,8 +37,6 @@ function readCutout(params: URLSearchParams, epoch: string): ArchiveCutout | nul
 
 export function Dashboard({ embedded = false }: { embedded?: boolean }) {
   const clock = useMemo(() => createAnimationClock(), []);
-  const [modalSection, setModalSection] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState("map");
   const targets = useDashboardStore((state) => state.targets);
   const source = useDashboardStore((state) => state.source);
   const loadError = useDashboardStore((state) => state.loadError);
@@ -184,11 +181,8 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <div className="flex min-h-screen flex-col" style={{ background: "radial-gradient(ellipse at 50% 0%, rgba(30,52,74,0.22) 0%, transparent 65%), linear-gradient(#0b1017, #090d12)" }}>
-      {!embedded && <SiteHeader activeSection={activeSection} dataSource={source} onNavigate={(section) => {
-        setActiveSection(section);
-        if (section === "map") setShowAtlas(true);
-        else setModalSection(section);
-      }} />}
+      {!embedded && <SiteHeader activeSection="map" dataSource={source} onOpenAtlas={() => setShowAtlas(true)}
+        spectralHref={`/spectral?ra=${ra}&dec=${dec}&fov=${fov}`} />}
       {source !== "api" ? (
         <main className="mx-auto w-full max-w-md p-6">
           <Panel title="SPHEREx data">
@@ -278,7 +272,6 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
         </main>
       )}
       {!embedded && <SiteFooter />}
-      <InfoModal sectionId={modalSection} onClose={() => setModalSection(null)} />
     </div>
   );
 }
