@@ -46,3 +46,9 @@ API çalışırken ayrı bir terminalden `python scripts/smoke_backend.py --wise
 | --- | ---: | ---: | --- |
 | `ivo://irsa.ipac/spherex_dr1?2025W40_1A_0444_3/D6` | 331.0960799055985° | −56.800529751506424° | `f0282210706193bf9e4e0c2b902d1ed846bd2d52d4ad2424652030996de18583` |
 | `ivo://irsa.ipac/spherex_dr1?2026W18_1A_0502_1/D6` | 331.09744651228624° | −56.800835052161254° | `464ce879ef80db459bab4a94ee246bb7c57de0a9f470e597f3813e4bd78c770f` |
+
+## Doyum ve optik referans
+
+Barnard Yıldızı için ek DR1 kesitlerinde de 3 × 3 çekirdek bölgesi maskeli kaldı. Önceki 13 kesitte maskesiz PSF kanatlarının model uyumu indirgenmiş χ² 149–652 aralığında kaldı. R Draconis'in ek DR1 ve QR3 D1/D2 kesitlerinde kullanılabilir çekirdek pikseli 0/9 idi. RW Aurigae'nin bazı kesitlerinde doyuma yaklaşan piksel, çekirdeği geçerli bir D1 kesitinde ise yüksek model artığı görüldü. Bu sınamalar SPHEREx hareketi veya akı farkı üretmedi. [IRSA piksel bayrakları](https://irsa.ipac.caltech.edu/onlinehelp/spherex/spherex/sp.html#notes-on-spherex-photometry-flags)
+
+R Draconis için AAVSO'nun görsel gözlemlerinde MJD 61180–61208 arasında 20 geçerli ölçümün medyanı 12,65 kadir, MJD 61292–61306 arasında 11 ölçümün medyanı 7,50 kadir. Yaklaşık 5,15 kadirlik fark optik referans eğrisinde görülebilir. `GET /api/targets/r-draconis/reference-light-curve?start_mjd=61180&end_mjd=61308&limit=129` çağrısı gözlemci kodları ve kaynak bilgileriyle gerçek gözlemleri döndürür. Fotometriyi AAVSO gözlemcileri sağladı. [AAVSO veri arşivi](https://aavso.org/search-and-download-data/)

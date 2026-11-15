@@ -6,7 +6,7 @@ from requests import Response
 
 from apps.api import main
 from apps.api.main import create_app
-from pipeline import catalog_overlays, targets
+from pipeline import catalog_overlays, reference_light_curves, targets
 from pipeline.archive import ArchiveObservation, ArchiveSearch
 from pipeline.catalog import load_manifest
 
@@ -95,3 +95,35 @@ def test_gaia_overlay_preserves_large_ids_and_missing_values(tmp_path, monkeypat
                                     "pm_ra_cosdec_mas_yr": None, "pm_dec_mas_yr": None, "parallax_mas": None}]
     finally:
         catalog_overlays.query_overlay.cache_clear()
+
+
+def test_reference_light_curve_keeps_band_provenance_and_limits(tmp_path, monkeypatch):
+    payload = b"""<VSXObject><Name>R Dra</Name><AUID>000-BBX-660</AUID><Data>
+JD,mag,uncert,band,by,fainterThan,obsType
+2461182.5,12.6,,Vis.,MOW,0,Visual
+2461181.5,12.8,0.1,Vis.,PUJ,1,Visual
+</Data></VSXObject>"""
+    response = Response()
+    response.status_code = 200
+    monkeypatch.setattr(response, "iter_content", lambda _: iter([payload[:60], payload[60:]]))
+    monkeypatch.setattr(response, "close", lambda: None)
+
+    def remote(url, *, params, **kwargs):
+        assert url == reference_light_curves.VSX_URL
+        assert params["ident"] == "000-BBX-660" and params["band"] == "Vis."
+        assert (params["fromjd"], params["tojd"], params["data"]) == (2461180.5, 2461185.5, 2)
+        return response
+
+    monkeypatch.setattr(reference_light_curves, "get", remote)
+    try:
+        with TestClient(create_app(MANIFEST, tmp_path)) as client:
+            url = "/api/targets/r-draconis/reference-light-curve"
+            result = client.get(url, params={"start_mjd": 61180, "end_mjd": 61185, "limit": 1})
+            assert client.get(url, params={"start_mjd": 61181, "end_mjd": 61180}).status_code == 422
+        assert result.status_code == 200, result.text
+        curve = result.json()
+        assert curve["source"] == "AAVSO International Database" and curve["has_more"]
+        assert curve["points"] == [{"mjd": 61181, "magnitude": 12.8, "uncertainty_mag": 0.1, "fainter_than": True,
+                                    "observer_code": "PUJ", "observation_type": "Visual"}]
+    finally:
+        reference_light_curves._query.cache_clear()

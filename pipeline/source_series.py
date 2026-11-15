@@ -31,20 +31,20 @@ class SourceSeriesRequest(BaseModel):
         return self
 
 
-def _same_bandpass(a: dict, b: dict) -> bool:
-    return (a["detector"], a["photometry"]["calibration"]) == (b["detector"], b["photometry"]["calibration"]) and (
-        abs(a["photometry"]["wavelength_um"] - b["photometry"]["wavelength_um"])
-        <= 0.25 * min(a["photometry"]["bandwidth_um"], b["photometry"]["bandwidth_um"])
+def _same_bandpass(a: dict, b: dict, comparison_keys: dict[str, tuple]) -> bool:
+    fit_a, fit_b = a["photometry"], b["photometry"]
+    return comparison_keys[a["epoch"]] == comparison_keys[b["epoch"]] and (
+        abs(fit_a["wavelength_um"] - fit_b["wavelength_um"]) <= 0.25 * min(fit_a["bandwidth_um"], fit_b["bandwidth_um"])
     )
 
 
-def _light_curves(samples: list[dict]) -> list[dict]:
+def _light_curves(samples: list[dict], comparison_keys: dict[str, tuple]) -> list[dict]:
     groups: list[list[dict]] = []
     for sample in samples:
         if sample["photometry"] is None:
             continue
         for group in groups:
-            if all(_same_bandpass(sample, point) for point in group):
+            if all(_same_bandpass(sample, point, comparison_keys) for point in group):
                 group.append(sample)
                 break
         else:
@@ -83,7 +83,7 @@ def source_series(request: SourceSeriesRequest, locate: Callable[[str], tuple[Ob
     visits: dict[tuple[str, str], dict] = {}
     seen = set()
     for observation, directory in selected:
-        identity = (observation.release, observation.observation_id, observation.detector, observation.band)
+        identity = (observation.source, observation.observation_id, observation.detector, observation.band)
         if identity in seen:
             raise DataError("duplicate_observation", "Multiple epochs identify the same physical exposure and detector")
         seen.add(identity)
@@ -99,6 +99,8 @@ def source_series(request: SourceSeriesRequest, locate: Callable[[str], tuple[Ob
             sample["photometry"] = measure_source(directory, observation, ra, dec).model_dump()
         except DataError as exc:
             sample["error"] = {"code": exc.code, "message": str(exc)}
+            if exc.details is not None:
+                sample["error"]["details"] = exc.details
         samples.append(sample)
         key = (observation.release, observation.observation_id)
         visit = visits.setdefault(key, {"release": key[0], "observation_id": key[1], "mjd": mjd, "epochs": []})
@@ -114,7 +116,8 @@ def source_series(request: SourceSeriesRequest, locate: Callable[[str], tuple[Ob
     return {
         "target_id": request.target_id, "quantity": "source_flux_density",
         "predicted_catalog_offset_arcsec": predicted,
-        "samples": samples, "visits": list(visits.values()), "light_curves": _light_curves(samples),
+        "samples": samples, "visits": list(visits.values()),
+        "light_curves": _light_curves(samples, {record.epoch: record.comparison_key for record, _ in selected}),
         "warnings": [
             "Visit spectra contain only measured detector samples.",
             "Changes and weighted means use independent statistical errors. Agreement in calibration and wavelength is required.",

@@ -25,6 +25,7 @@ from pipeline.images import read_image
 from pipeline.import_storage import DEFAULT_IMPORT_QUOTA_BYTES, ImportQuota
 from pipeline.ingest import ROOT, configured_path
 from pipeline.photometry import Photometry, measure_source
+from pipeline.reference_light_curves import ReferenceBand, reference_light_curve
 from pipeline.source_series import EpochId, SourceSeriesRequest, source_series
 from pipeline.spectra import detector_layer, layers, spectrum
 from pipeline.targets import DEFAULT_TARGET_MJD, TARGETS, covered_target_epoch, get_target
@@ -204,6 +205,14 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
         return {'target': target.metadata(center_mjd), 'archive': archive.model_dump(exclude={'observations'}),
                 'observations': observations}
 
+    @api.get('/api/targets/{target_id}/reference-light-curve')
+    def target_reference_light_curve(target_id: str, start_mjd: ArchiveDate, end_mjd: ArchiveDate,
+                                     band: ReferenceBand | None = None,
+                                     limit: Annotated[int, Query(ge=1, le=2000)] = 500):
+        get_target(target_id)
+        selected_band = band or ('Vis.' if target_id == 'r-draconis' else 'V')
+        return reference_light_curve(target_id, selected_band, start_mjd, end_mjd, limit)
+
     @api.post('/api/archive/import', status_code=201, responses={
         200: {'description': 'Existing cutout'}, 507: {'description': 'Imported exposure storage quota exceeded'},
     })
@@ -238,7 +247,7 @@ def create_app(manifest_path: Path | None = None, data_dir: Path | None = None,
             a, b = first[0], second[0]
             gap = b.observation_start_mjd - a.observation_start_mjd
             if (gap >= request.min_gap_days and a.observation_id != b.observation_id
-                    and (a.source, a.band, a.detector, a.calibration) == (b.source, b.band, b.detector, b.calibration)):
+                    and a.comparison_key == b.comparison_key):
                 pairs.append((gap, first, second))
         attempts = []
         for gap, first, second in sorted(pairs, key=lambda item: item[0], reverse=True)[:6]:

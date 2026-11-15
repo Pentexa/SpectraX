@@ -96,6 +96,8 @@ def astrometry(request: AstrometryRequest, locate: Callable[[str], tuple[Observa
             result = _centroid(directory, record, position)
         except DataError as exc:
             sample["error"] = {"code": exc.code, "message": str(exc)}
+            if exc.details is not None:
+                sample["error"]["details"] = exc.details
         else:
             fits.append(result)
             sample["centroid"] = result[3]

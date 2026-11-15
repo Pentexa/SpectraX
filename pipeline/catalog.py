@@ -60,6 +60,19 @@ class Observation(Product):
     reject_flag_bits: int = Field(default=0xFFFFFFFF, ge=0, le=0xFFFFFFFF)
     full_image: ArchiveFile | None = None
 
+    @property
+    def comparison_key(self) -> tuple:
+        calibration = self.calibration
+        if (
+            self.source == "NASA/IPAC IRSA SPHEREx"
+            and self.release in {"DR1", "QR3"}
+            and self.spectral_wcs == "spherex-lvf"
+            and calibration == f"SPHEREx {self.release} Level 2B v27"
+        ):
+            # IRSA calibrated DR1 and QR3 with the same Level 2B pipeline.
+            calibration = "SPHEREx Level 2B v27"
+        return self.source, self.band, self.detector, self.spectral_wcs, calibration
+
     def metadata(self, data_dir: Path) -> dict:
         metadata = super().metadata(data_dir)
         if metadata["available_locally"]:

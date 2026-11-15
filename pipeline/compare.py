@@ -70,11 +70,8 @@ def _measurement(wcs: WCS, a, b, variance, compatible, unit: u.UnitBase) -> dict
 
 def compare(position: Position, mode: Mode, epoch_a: Observation, epoch_b: Observation, a: Image, b: Image) -> dict:
     arithmetic = mode != "side_by_side"
-    same_product_type = (epoch_a.source, epoch_a.band, epoch_a.detector, epoch_a.spectral_wcs, epoch_a.calibration) == (
-        epoch_b.source, epoch_b.band, epoch_b.detector, epoch_b.spectral_wcs, epoch_b.calibration,
-    )
     matching_units = a.unit.is_equivalent(b.unit)
-    if arithmetic and (not same_product_type or not matching_units):
+    if arithmetic and (epoch_a.comparison_key != epoch_b.comparison_key or not matching_units):
         raise DataError("incompatible_epochs", "Arithmetic requires compatible units, band and calibration")
 
     wcs, shape = output_grid(position, max(a.pixel_scale, b.pixel_scale))

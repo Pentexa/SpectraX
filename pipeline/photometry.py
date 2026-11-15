@@ -14,6 +14,13 @@ from pipeline.images import read_image
 
 FIT_RADIUS = 4
 QualityFlag = Literal["masked_fit_pixels", "low_snr", "high_residual"]
+PIXEL_FLAGS = {
+    0: "TRANSIENT", 1: "OVERFLOW", 2: "SUR_ERROR", 6: "NONFUNC", 7: "DICHROIC", 9: "MISSING_DATA",
+    10: "HOT", 11: "COLD", 12: "FULLSAMPLE", 14: "PHANMISS", 15: "NONLINEAR", 17: "PERSIST",
+    19: "OUTLIER", 20: "CROSSTALK", 21: "SOURCE", 22: "GHOST", 23: "GHOST_FPA", 24: "GHOST_EXT",
+    25: "STREAK", 26: "BLOOM", 27: "SNOWBALL", 28: "HALO", 29: "SATELLITE_HALO",
+}
+KNOWN_PIXEL_FLAGS = sum(1 << bit for bit in PIXEL_FLAGS)
 
 
 class Photometry(BaseModel):
@@ -88,10 +95,20 @@ def _fit_window(data_dir: Path, observation: Observation, ra: float, dec: float)
         raise DataError("photometry_unavailable", "The exposure does not contain a complete fit window at this position", 409)
     region = np.s_[cy - radius:cy + radius + 1, cx - radius:cx + radius + 1]
     variance = image.variance[region]
-    usable = image.valid[region] & np.isfinite(variance) & (variance > 0)
+    valid_variance = np.isfinite(variance) & (variance > 0)
+    usable = image.valid[region] & valid_variance
     core = np.s_[radius - 1:radius + 2, radius - 1:radius + 2]
     if not usable[core].all() or usable.sum() < usable.size / 2:
-        raise DataError("photometry_unavailable", "Quality flags or missing variance exclude too many fit pixels", 409)
+        flags = int(np.bitwise_or.reduce(image.flags[region][core].ravel()))
+        raise DataError("photometry_unavailable", "Quality flags or missing variance exclude too many fit pixels", 409,
+                        details={
+                            "reason": "masked_source_core" if not usable[core].all() else "insufficient_fit_pixels",
+                            "core_pixels_usable": int(usable[core].sum()), "core_pixels_total": usable[core].size,
+                            "core_pixels_without_variance": int((~valid_variance[core]).sum()),
+                            "fit_pixels_usable": int(usable.sum()), "fit_pixels_total": usable.size,
+                            "core_flag_union": flags, "core_flags": [name for bit, name in PIXEL_FLAGS.items() if flags & (1 << bit)],
+                            "unknown_core_flag_bits": flags & ~KNOWN_PIXEL_FLAGS,
+                        })
 
     model = _local_epsf(data_path(data_dir, observation), x, y, image.metadata["detector"])
     yy, xx = np.mgrid[cy - radius:cy + radius + 1, cx - radius:cx + radius + 1]

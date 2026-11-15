@@ -30,7 +30,7 @@ CENTER = {"ra": 269.45, "dec": 4.7}
 CUTOUT = {**CENTER, "fov": 0.05}
 
 
-def synthetic_exposure(product, index, *, motion=(0, 0), references=False):
+def synthetic_exposure(product, index, *, motion=(0, 0), references=False, core_flags=0):
     """Build a small FITS with a wavelength table, known PSF and variance."""
     wcs = WCS(naxis=2)
     wcs.wcs.ctype = ["RA---TAN", "DEC--TAN"]
@@ -68,11 +68,13 @@ def synthetic_exposure(product, index, *, motion=(0, 0), references=False):
     if references:
         for ref_x, ref_y in [(-9, -9), (9, -9), (-9, 0), (9, 0), (-9, 9), (9, 9)]:
             signal += 2 * np.exp(-((x - ref_x)**2 + (y - ref_y)**2) / 2)
+    flags = np.zeros(signal.shape, dtype=np.int32)
+    flags[14, 14] = core_flags
     stream = BytesIO()
     fits.HDUList([
         fits.PrimaryHDU(),
         fits.ImageHDU(signal, header=header, name="IMAGE"),
-        fits.ImageHDU(np.zeros(signal.shape, dtype=np.int32), name="FLAGS"),
+        fits.ImageHDU(flags, name="FLAGS"),
         fits.ImageHDU(np.full(signal.shape, 0.01), name="VARIANCE"),
         psf,
         lookup,
@@ -104,6 +106,32 @@ def test_astrometry_measures_subpixel_motion_and_requires_reference_stars(tmp_pa
         assert sparse["status"] == "registration_unverified"
         assert sparse["measured_offset_arcsec"] is None
         assert all(item["centroid"] for item in sparse["samples"])
+
+
+def test_saturation_details_are_shared_by_science_routes(tmp_path):
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    observation = manifest["observations"][0]
+    bits = (1 << 1) | (1 << 26) | (1 << 31)
+    payload = synthetic_exposure(observation, 0, core_flags=int(np.array(bits, dtype=np.uint32).view(np.int32)))
+    (tmp_path / observation["filename"]).write_bytes(payload)
+    observation.update(size_bytes=len(payload), sha256=sha256(payload).hexdigest())
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with TestClient(create_app(manifest_path, tmp_path)) as client:
+        photometry = client.get("/api/photometry", params=CENTER | {"epoch": observation["epoch"]})
+        assert photometry.status_code == 409
+        details = photometry.json()["error"]["details"]
+        assert details["reason"] == "masked_source_core"
+        assert (details["core_pixels_usable"], details["core_pixels_total"]) == (8, 9)
+        assert details["core_flags"] == ["OVERFLOW", "BLOOM"]
+        assert details["unknown_core_flag_bits"] == 1 << 31
+        for endpoint, epochs in (
+            ("source-series", [observation["epoch"]]),
+            ("astrometry", [observation["epoch"], manifest["observations"][1]["epoch"]]),
+        ):
+            response = client.post(f"/api/{endpoint}", json=CENTER | {"epochs": epochs})
+            assert response.status_code == 200
+            assert response.json()["samples"][0]["error"]["details"] == details
 
 
 @pytest.fixture
@@ -333,6 +361,19 @@ def test_archive_import_from_discovery_through_science_and_restart(irsa, tmp_pat
         assert imported.status_code == 201, imported.text
         assert imported.json()["release"] == "QR3"
         assert client.get("/api/datasets", params={"release": "QR3"}).json()["observations"] == [imported.json()]
+        qr3_epoch = imported.json()["epoch"]
+        cross_release = client.get("/api/compare", params={
+            **CENTER, "fov": 0.04, "epoch_a": first["epoch"], "epoch_b": qr3_epoch,
+        })
+        if real_samples:
+            assert cross_release.status_code == 422 and cross_release.json()["error"]["code"] == "incompatible_bandpass"
+        else:
+            assert cross_release.status_code == 200, cross_release.text
+            assert cross_release.json()["measurement"]["difference"] == pytest.approx(2.0)
+            result = client.post("/api/compare/auto", json={**CENTER, "fov": 0.04, "epochs": [first["epoch"], qr3_epoch]})
+            assert result.status_code == 200
+            series = client.post("/api/source-series", json={**CENTER, "epochs": [first["epoch"], qr3_epoch]}).json()
+            assert len(series["light_curves"]) == 1 and series["light_curves"][0]["change"]["flux_change_ujy"] > 0
 
 
 def test_archive_import_rejects_untrusted_and_invalid_fits(irsa, tmp_path):
