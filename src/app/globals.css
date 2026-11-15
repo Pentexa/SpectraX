@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* ============================================================
-   SPHEREx Sky Hunter — Design tokens (Tailwind CSS v4)
+   SpectraX — Design tokens (Tailwind CSS v4)
    ============================================================ */
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;

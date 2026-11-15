@@ -1,4 +1,4 @@
-# SPHEREx Sky Hunter
+# SpectraX
 
 A citizen science portal for hunting transients and Planet X across NASA SPHEREx
 all-sky spectral data. The original single-file prototype has been re-architected
@@ -61,7 +61,7 @@ Development output is written to `.next-dev`, and production builds use
 
 ## Backend integration
 
-Set `SPECTREX_API_URL` before building and starting Next.js. The default is
+Set `SPECTRAX_API_URL` before building and starting Next.js. The default is
 `http://127.0.0.1:8765`. The browser calls the same-origin Next.js proxy,
 which forwards science requests to the SpectraX FastAPI service.
 

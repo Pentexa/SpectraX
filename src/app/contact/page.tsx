@@ -2,17 +2,17 @@ import type { Metadata } from "next";
 import { SectionPage, sectionCard, sectionCopy, sectionLink } from "@/components/layout/SectionPage";
 
 export const metadata: Metadata = {
-  title: "Contact · SpectreX",
-  description: "Send SpectreX feedback, report a reproducible issue, or reach the IRSA Help Desk.",
+  title: "Contact · SpectraX",
+  description: "Send SpectraX feedback, report a reproducible issue, or reach the IRSA Help Desk.",
 };
 
 export default function ContactPage() {
   return (
     <SectionPage section="contact" title="Contact"
-      intro="Share feedback on SpectreX or find help with the SPHEREx archive.">
+      intro="Share feedback on SpectraX or find help with the SPHEREx archive.">
       <div className="grid gap-4 md:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] md:gap-6">
         <section className={sectionCard}>
-          <h2 className="text-xl font-semibold tracking-tight">SpectreX project</h2>
+          <h2 className="text-xl font-semibold tracking-tight">SpectraX project</h2>
           <p className={`mt-3 ${sectionCopy}`}>
             Open a GitHub issue for a bug, feature request or research collaboration. For an unexpected result, include the share link, release, and the steps that led to it.
           </p>

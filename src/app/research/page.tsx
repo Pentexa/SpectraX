@@ -3,7 +3,7 @@ import Link from "next/link";
 import { SectionPage, sectionCard, sectionCopy, sectionLink } from "@/components/layout/SectionPage";
 
 export const metadata: Metadata = {
-  title: "Research · SpectreX",
+  title: "Research · SpectraX",
   description: "Compare observations of the five Planet X and SPHEREx challenge targets.",
 };
 

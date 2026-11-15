@@ -15,7 +15,7 @@ const jetBrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SPECTREX",
+  title: "SPECTRAX",
   description:
     "Citizen science portal: hunt transients and Planet X across the SPHEREx all-sky spectral survey.",
 };

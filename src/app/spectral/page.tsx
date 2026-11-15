@@ -3,7 +3,7 @@ import { SectionPage } from "@/components/layout/SectionPage";
 import { SpectralWorkspace } from "./SpectralWorkspace";
 
 export const metadata: Metadata = {
-  title: "Spectral Explorer · SpectreX",
+  title: "Spectral Explorer · SpectraX",
   description: "Explore the 102 calibrated near-infrared channels of the SPHEREx DR1 all-sky cube.",
 };
 

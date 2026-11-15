@@ -1,5 +1,5 @@
 """
-SPHEREx Sky Hunter — FastAPI reference backend.
+SpectraX — FastAPI reference backend.
 
 This is a minimal reference implementation of the API contract the Next.js
 frontend consumes. Run it with:
@@ -16,7 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
-    title="SPHEREx Sky Hunter API",
+    title="SpectraX API",
     version="0.1.0",
     description="Citizen science portal backend for transient & Planet X hunting.",
 )

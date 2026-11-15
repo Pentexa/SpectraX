@@ -172,7 +172,7 @@ export function Dashboard({ embedded = false }: { embedded?: boolean }) {
     url.searchParams.set("view", showAtlas ? "atlas" : showTimelinePanel ? "timeline" : "images");
     const src = url.toString();
     return embed
-      ? `<iframe src="${src.replaceAll("&", "&amp;")}" title="SpectreX SPHEREx explorer" width="100%" height="760" loading="lazy"></iframe>`
+      ? `<iframe src="${src.replaceAll("&", "&amp;")}" title="SpectraX SPHEREx explorer" width="100%" height="760" loading="lazy"></iframe>`
       : src;
   }
 

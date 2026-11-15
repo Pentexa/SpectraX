@@ -3,8 +3,8 @@ import Image from "next/image";
 import { SectionPage, sectionCard, sectionCopy, sectionLink } from "@/components/layout/SectionPage";
 
 export const metadata: Metadata = {
-  title: "About · SpectreX",
-  description: "Meet the team behind SpectreX and see where its astronomy data comes from.",
+  title: "About · SpectraX",
+  description: "Meet the team behind SpectraX and see where its astronomy data comes from.",
 };
 
 const bands = [
@@ -69,13 +69,13 @@ const aiCredits = [
 
 export default function AboutPage() {
   return (
-    <SectionPage section="about" title="About SpectreX"
+    <SectionPage section="about" title="About SpectraX"
       intro="A citizen science tool built for the Planet X and SPHEREx challenge at the 2026 NASA Space Apps Challenge.">
       <div className="grid items-start gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] md:gap-6">
         <section className={sectionCard}>
           <h2 className="text-xl font-semibold tracking-tight">The mission and the data</h2>
           <p className={`mt-3 ${sectionCopy}`}>
-            NASA’s SPHEREx telescope surveys the sky in 102 near-infrared channels from 0.75 to 5 µm. SpectreX uses the public NASA/IPAC Infrared Science Archive (IRSA) to compare observations and inspect how surface brightness changes with wavelength.
+            NASA’s SPHEREx telescope surveys the sky in 102 near-infrared channels from 0.75 to 5 µm. SpectraX uses the public NASA/IPAC Infrared Science Archive (IRSA) to compare observations and inspect how surface brightness changes with wavelength.
           </p>
           <dl className="mt-5 grid gap-3 border-y border-border-subtle py-4">
             <div className="grid grid-cols-[4rem_minmax(0,1fr)] gap-2">
